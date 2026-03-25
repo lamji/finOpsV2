@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "agent": "finops-agent",
+  "autoMemoryEnabled": true,
+  "enableAllProjectMcpServers": true,
+  "permissions": {
+    "allow": [
+      "Bash",
+      "Read",
+      "Write",
+      "Edit",
+      "Glob",
+      "Grep",
+      "WebSearch",
+      "WebFetch",
+      "mcp__playwright__browser_navigate",
+      "mcp__playwright__browser_snapshot",
+      "mcp__playwright__browser_click",
+      "mcp__playwright__browser_type",
+      "mcp__playwright__browser_take_screenshot",
+      "mcp__playwright__browser_press_key",
+      "mcp__playwright__browser_hover",
+      "mcp__playwright__browser_fill_form",
+      "mcp__playwright__browser_select_option",
+      "mcp__playwright__browser_evaluate",
+      "mcp__playwright__browser_network_requests",
+      "mcp__playwright__browser_console_messages",
+      "mcp__playwright__browser_resize",
+      "mcp__playwright__browser_tabs",
+      "mcp__playwright__browser_handle_dialog",
+      "mcp__playwright__browser_file_upload",
+      "mcp__playwright__browser_wait_for"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '=== PROJECT KNOWLEDGE ===' && cat .claude/agent-memory/knowledge.md && echo '' && echo '=== PROJECT DOCS ===' && for f in .claude/docs/*.md; do echo \"--- $f ---\" && cat \"$f\" && echo ''; done && echo '=== RULES ===' && for f in .claude/rules/*.md; do echo \"--- $f ---\" && cat \"$f\" && echo ''; done && echo '=== AGENT MEMORY INDEX ===' && cat .claude/agent-memory/finops-agent/MEMORY.md && echo '' && echo '=== MEMORY: User Profile ===' && cat .claude/agent-memory/finops-agent/user_profile.md && echo '' && echo '=== MEMORY: Communication Preferences ===' && cat .claude/agent-memory/finops-agent/feedback_communication.md && echo '' && echo '=== MEMORY: Memory-First Rule ===' && cat .claude/agent-memory/finops-agent/feedback_memory_first.md && echo '' && echo '=== MEMORY: Project Status ===' && cat .claude/agent-memory/finops-agent/project_status.md && echo '' && echo '=== MEMORY: Architecture Decisions ===' && cat .claude/agent-memory/finops-agent/project_architecture.md && echo '' && echo '✅ All knowledge and memory loaded.' && echo '⚠️  MANDATORY RULE: Answer from memory. Only read project files if memory is insufficient for the task.'",
+            "statusMessage": "Loading project knowledge and agent memory..."
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "--- RULE CHECK: Memory-First Rule ---\n\nSTEP 1 — Is this a project source file?\nProject source files are paths containing: components/, hooks/, app/, lib/, pages/\nMemory/config files are paths containing: .claude/, agent-memory/, knowledge.md, MEMORY.md, settings.json, rules.md, CLAUDE.md\n\nSTEP 2 — What is the purpose?\n- UNDERSTANDING (answering a question, checking what exists, verifying data) → BLOCK. Memory was preloaded at session start and should answer this.\n- IMPLEMENTATION (making a specific code change, editing, writing new code) → ALLOW. Reading is necessary to make accurate edits.\n\nDecision rules:\n1. If file is a memory/config file → ALWAYS ALLOW: {\"continue\": true, \"reason\": \"Memory or config file - allowed\"}\n2. If file is a project source file AND purpose is understanding/discovery → BLOCK: {\"continue\": false, \"reason\": \"RULE VIOLATION — Memory-First Rule. Project knowledge and memory were preloaded at session start. You must answer from memory first. Only read project source files when you need to make a specific code change. Stop, re-read your loaded memory, and answer the question without opening files.\"}\n3. If file is a project source file AND purpose is implementation (writing/editing code) → ALLOW: {\"continue\": true, \"reason\": \"Implementation read - allowed\"}\n\nRespond with JSON only: {\"continue\": true/false, \"reason\": \"...\"}"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/check-edit-permission.js"
+          }
+        ]
+      }
+    ]
+  }
+}

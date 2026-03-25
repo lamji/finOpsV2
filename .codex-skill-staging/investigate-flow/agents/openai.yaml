@@ -1,0 +1,4 @@
+interface:
+  display_name: "Investigate Flow"
+  short_description: "Trace user flows end-to-end"
+  default_prompt: "Use $investigate-flow to trace this flow from the entry point to the last reachable call with file:line evidence."
