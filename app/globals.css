@@ -48,29 +48,29 @@
 }
 
 :root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
+    --background: oklch(0.98 0.004 248);
+    --foreground: oklch(0.2 0.01 248);
+    --card: oklch(0.995 0.002 248);
+    --card-foreground: oklch(0.2 0.01 248);
+    --popover: oklch(0.995 0.002 248);
+    --popover-foreground: oklch(0.2 0.01 248);
+    --primary: oklch(0.33 0.04 250);
     --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.955 0.004 248);
+    --secondary-foreground: oklch(0.2 0.01 248);
+    --muted: oklch(0.955 0.004 248);
+    --muted-foreground: oklch(0.5 0.012 248);
+    --accent: oklch(0.945 0.006 248);
+    --accent-foreground: oklch(0.2 0.01 248);
     --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
+    --border: oklch(0.9 0.006 248);
+    --input: oklch(0.9 0.006 248);
+    --ring: oklch(0.62 0.025 248);
+    --chart-1: oklch(0.72 0.03 248);
+    --chart-2: oklch(0.62 0.024 248);
+    --chart-3: oklch(0.52 0.018 248);
+    --chart-4: oklch(0.4 0.012 248);
+    --chart-5: oklch(0.3 0.008 248);
     --radius: 0.625rem;
     --sidebar: oklch(0.985 0 0);
     --sidebar-foreground: oklch(0.145 0 0);
@@ -122,6 +122,9 @@
     }
   body {
     @apply bg-background text-foreground;
+    background-image:
+      radial-gradient(circle at top, color-mix(in oklab, var(--color-primary) 8%, transparent) 0%, transparent 28%),
+      linear-gradient(to bottom, color-mix(in oklab, var(--color-muted) 35%, transparent), transparent 20%);
     }
   html {
     @apply font-sans;

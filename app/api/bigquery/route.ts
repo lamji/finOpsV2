@@ -117,7 +117,6 @@ function buildDashboardResponse(
     source,
     statistics: aggregated.statistics,
     charts: aggregated.charts,
-    drilldown: aggregated.drilldown,
     byService: aggregated.byService,
     byProject: aggregated.byProject,
     bySku: aggregated.bySku,

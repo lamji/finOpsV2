@@ -34,6 +34,33 @@ export interface Alert {
   message: string
 }
 
+export interface ChatbotMessage {
+  id: string
+  role: "assistant" | "user"
+  content: string
+  blocked?: boolean
+}
+
+export interface ChatbotContext {
+  statistics: FinancialMetric[]
+  charts: ChartDataPoint[]
+  byService: CostDriver[]
+  byProject: CostDriver[]
+  bySku: CostDriver[]
+  summary: FinancialSummary
+  aiInsights: Alert[]
+}
+
+export interface ChatbotRequest {
+  message: string
+  context: ChatbotContext
+}
+
+export interface ChatbotResponse {
+  message: string
+  blocked: boolean
+}
+
 export interface QuickAction {
   id: string
   label: string
@@ -45,7 +72,6 @@ export interface BigQueryDashboardResponse {
   source: "cached" | "db"
   statistics: FinancialMetric[]
   charts: ChartDataPoint[]
-  drilldown: CostDriver[]        // by service category
   byService: CostDriver[]        // by raw service name
   byProject: CostDriver[]        // by project
   bySku: CostDriver[]            // by SKU (top 20)
@@ -65,7 +91,6 @@ export interface StatCardProps {
 export interface AggregatedDashboard {
   statistics: FinancialMetric[]
   charts: ChartDataPoint[]
-  drilldown: CostDriver[]        // by service category (Compute, Storage, etc.)
   byService: CostDriver[]        // by raw service.description
   byProject: CostDriver[]        // by project.id / project.name
   bySku: CostDriver[]            // by sku.description (top 20)
