@@ -4,6 +4,12 @@
   "autoMemoryEnabled": true,
   "enableAllProjectMcpServers": true,
   "permissions": {
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(git push --force *)",
+      "Bash(git reset --hard *)",
+      "Read(.env)"
+    ],
     "allow": [
       "Bash",
       "Read",
