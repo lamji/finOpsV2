@@ -106,50 +106,12 @@ npm run typecheck
 - `components/`: UI composition and feature components
 - `lib/`: environment, aggregation engine, logging, Redis helpers, shared types
 
-### Confirmed Runtime Flow
-
-```text
-[Entry]
-  app/page.tsx:3
-    renders Dashboard() -> Presentation/Dashboard/index.tsx:10
-      mounts DashboardDataSync() -> components/DashboardDataSync/index.tsx:12
-        calls useDashboard() -> Presentation/Dashboard/useDashboard.ts:5
-          calls useApiDashboard() -> Presentation/Dashboard/useApiDashboard.ts:20
-            [async] fetch("/api/bigquery") -> Presentation/Dashboard/useApiDashboard.ts:9
-              GET /api/bigquery -> app/api/bigquery/route.ts:131
-                reads validated env -> lib/env.ts:10
-                checks Redis cache -> lib/redis.ts:46 [external: service]
-                if miss, authenticates Google service account -> app/api/bigquery/route.ts:203
-                POSTs query to BigQuery API -> app/api/bigquery/route.ts:230 [external: API]
-                normalizes rows -> app/api/bigquery/route.ts:306
-                aggregates metrics -> lib/finops-engine.ts:99
-                generates AI insights -> lib/finops-engine.ts:243 [external: service]
-                stores cache -> lib/redis.ts:83 [external: service]
-                returns unified dashboard payload -> app/api/bigquery/route.ts:336 [END]
-      renders StatsSection -> components/StatsSection/index.tsx:25
-      renders MainContent -> components/MainContent/index.tsx:243
-      renders DashboardInsights -> components/DashboardInsights/index.tsx:7
-      renders FloatingChatbotButton -> components/FloatingChatbotButton/index.tsx:13
-        builds dashboard context -> components/FloatingChatbotButton/index.tsx:73
-        [async] POST /api/chatbot -> components/FloatingChatbotButton/index.tsx:119
-          validates scope and input -> app/api/chatbot/route.ts:75
-          calls generateChatbotReply() -> lib/finops-engine.ts:361 [external: service]
-          returns chatbot message -> app/api/chatbot/route.ts:120 [END]
-```
-
 ### Data Responsibilities
 
 - `useApiDashboard()` owns remote fetching and cache freshness timing with a 5-minute client stale window in [`Presentation/Dashboard/useApiDashboard.ts`](/C:/Users/akrizu/Documents/DigitalFuture/finOps/Presentation/Dashboard/useApiDashboard.ts#L20).
 - `useDashboard()` reshapes the API payload into view-friendly properties consumed by multiple widgets in [`Presentation/Dashboard/useDashboard.ts`](/C:/Users/akrizu/Documents/DigitalFuture/finOps/Presentation/Dashboard/useDashboard.ts#L5).
 - `aggregate()` is the main domain transformation layer. It converts raw billing rows into summary metrics, comparative drilldowns, and monthly trend data in [`lib/finops-engine.ts`](/C:/Users/akrizu/Documents/DigitalFuture/finOps/lib/finops-engine.ts#L99).
 - `DashboardDataSync` handles the main side effect on dashboard fetch failure by showing a toast in [`components/DashboardDataSync/index.tsx`](/C:/Users/akrizu/Documents/DigitalFuture/finOps/components/DashboardDataSync/index.tsx#L12).
-
-### Key Decision Points
-
-- Cache hit vs. live BigQuery query in [`app/api/bigquery/route.ts`](/C:/Users/akrizu/Documents/DigitalFuture/finOps/app/api/bigquery/route.ts#L153)
-- Credential failure vs. BigQuery execution in [`app/api/bigquery/route.ts`](/C:/Users/akrizu/Documents/DigitalFuture/finOps/app/api/bigquery/route.ts#L209)
-- BigQuery polling path for incomplete jobs in [`app/api/bigquery/route.ts`](/C:/Users/akrizu/Documents/DigitalFuture/finOps/app/api/bigquery/route.ts#L266)
-- FinOps-only chatbot guardrails in [`app/api/chatbot/route.ts`](/C:/Users/akrizu/Documents/DigitalFuture/finOps/app/api/chatbot/route.ts#L95)
 
 ### External Dependencies Touched At Runtime
 
@@ -158,56 +120,42 @@ npm run typecheck
 - Anthropic messages API
 - Redis cache service
 
-### Likely Failure Points
-
-- Missing or malformed environment variables
-- Invalid Google service account permissions
-- BigQuery network or job timeout failures
-- Redis connectivity issues
-- Anthropic response parsing failures when AI output is not valid JSON
-
 ## 5. SDLC Overview
 
-### What Is Implemented In This Repository
+### How Environments Work
 
-The repository currently implements application-level runtime separation, not a full deployment pipeline:
+Each tier is a separate Vercel project linked to the same GitHub repository. Secrets are never committed — they are entered directly in each Vercel project's environment variables UI.
 
-- `NODE_ENV` is explicitly modeled as `development | test | production` in [`lib/env.ts`](/C:/Users/akrizu/Documents/DigitalFuture/finOps/lib/env.ts#L12).
-- Logging behavior changes by environment in [`lib/logger.ts`](/C:/Users/akrizu/Documents/DigitalFuture/finOps/lib/logger.ts#L10): pretty output in development, structured JSON in production.
-- Redis is designed to degrade gracefully across environments in [`lib/redis.ts`](/C:/Users/akrizu/Documents/DigitalFuture/finOps/lib/redis.ts#L26).
-- Local developer workflow is script-driven through `dev`, `build`, `start`, `lint`, and `typecheck` in [`package.json`](/C:/Users/akrizu/Documents/DigitalFuture/finOps/package.json#L6).
+| Tier | Vercel project | Branch | Credentials |
+|------|---------------|--------|-------------|
+| Development | `finops-dev` | `develop` | sandbox service account + sandbox BigQuery dataset |
+| Staging | `finops-staging` | `staging` | staging service account + staging BigQuery dataset |
+| Production | `finops-prod` | `production` | production service account + production BigQuery dataset |
 
-### What Is Not Present In This Repository
+### Deploying Development
 
-No first-party evidence was found for:
+1. Go to [vercel.com](https://vercel.com) → **Add New Project**
+2. Import the GitHub repo → set branch to `develop`
+3. Add all variables from [`.env.example`](.env.example) under **Environment Variables**, using sandbox credentials
+4. Click **Deploy**
 
-- CI workflows under a project-owned `.github/workflows`
-- Container build definitions
-- Infrastructure-as-code
-- Deployment manifests for dev, staging, or production
-- Secret management beyond environment variables
+### Promoting to Staging
 
-Because of that, the current SDLC should be described as:
+1. Go to [vercel.com](https://vercel.com) → **Add New Project**
+2. Import the same GitHub repo → set branch to `develop` (or a dedicated `staging` branch)
+3. Add all variables from [`.env.example`](.env.example) under **Environment Variables**, using staging credentials (different service account, different BigQuery dataset)
+4. Click **Deploy**
 
-1. Developer runs locally with environment variables.
-2. Developer validates with lint/typecheck and manual browser testing.
-3. Production promotion is expected to happen through an external platform or process that is not checked into this repository.
+Each push to that branch redeploys staging automatically.
 
-### Recommended Dev / Staging / Prod Lifecycle
+### Promoting to Production
 
-For a production-grade lifecycle, the current architecture fits this promotion model:
+1. Go to [vercel.com](https://vercel.com) → **Add New Project**
+2. Import the same GitHub repo → set branch to `main`
+3. Add all variables from [`.env.example`](.env.example) under **Environment Variables**, using production credentials
+4. Click **Deploy**
 
-1. `dev`: local feature work against sandbox BigQuery data and optional local Redis.
-2. `staging`: deployed with staging service-account credentials, staging Anthropic key, and Redis enabled for realistic cache behavior.
-3. `prod`: deployed with production secrets, read-only billing access, structured logs, and monitoring on route latency and BigQuery failures.
-
-Minimum pipeline gates should be:
-
-1. Install dependencies
-2. Run `npm run lint`
-3. Run `npm run typecheck`
-4. Run `npm run build`
-5. Smoke-test `/api/bigquery` and `/api/chatbot`
+Evrytime there is new changes and need to deploy in staging, just do a PR from develop to staging
 
 ## 6. AI Disclosure
 
@@ -258,37 +206,26 @@ AI was used in two ways in this project:
 
 ### If Data Volume Grows Massively
 
-The current design is appropriate for a small-to-medium dashboard, but it will not scale cleanly if the billing export becomes very large because the API route defaults to `SELECT *` for the current year in [`app/api/bigquery/route.ts`](/C:/Users/akrizu/Documents/DigitalFuture/finOps/app/api/bigquery/route.ts#L134).
+The main route already uses a `GROUP BY` pre-aggregated query instead of `SELECT *`, Redis caches the full dashboard payload for 5 minutes, and long-running jobs are polled until complete in [`app/api/bigquery/route.ts`](/C:/Users/akrizu/Documents/DigitalFuture/finOps/app/api/bigquery/route.ts#L135). Those are the right starting points. The next steps at scale:
 
-Recommended evolution:
-
-1. Replace raw-row fetches with pre-aggregated SQL by month, service, project, and SKU.
-2. Materialize daily or hourly summary tables in BigQuery instead of scanning export rows on request.
-3. Move expensive aggregation out of request time into scheduled ETL or dbt-style transforms.
-4. Store canonical dashboard snapshots in Redis or a serving database for low-latency reads.
-5. Add query cost monitoring and hard limits for BigQuery bytes billed.
+- Move aggregation offline — `aggregate()` runs synchronously in-process on every cache miss in [`lib/finops-engine.ts`](/C:/Users/akrizu/Documents/DigitalFuture/finOps/lib/finops-engine.ts#L99); a scheduled cron job writing to Redis with `TTL.HEAVY` would make the API route a cache-read-only path with no BigQuery call on user request
+- Materialise pre-grouped summary tables in BigQuery by month, service, project, and SKU so queries scan a small serving table rather than the full billing export
 
 ### If Compliance Requirements Tighten
 
-Recommended evolution:
-
-1. Add authentication and authorization to both API routes.
-2. Restrict `DELETE /api/bigquery` to privileged operators only.
-3. Move secrets to a managed secret store.
-4. Redact sensitive fields from logs and add audit trails for chatbot access.
-5. Add tenant or workspace isolation if the dashboard will serve multiple billing scopes.
-6. Introduce prompt and response retention policies for AI features.
-7. Add human review or deterministic fallback for AI-generated insight cards if compliance requires fully explainable outputs.
+- Add authentication to all three API routes — `GET /api/bigquery` and `POST /api/chatbot` are currently unauthenticated; a `middleware.ts` verifying a session token or API key covers all routes without touching individual handlers
+- Gate the `DELETE` endpoints on an `ADMIN_SECRET` env check or remove them from production builds via `DEPLOY_ENV` — both `DELETE /api/bigquery` and `DELETE /api/test` call `redisFlushAll()` with no auth check in [`app/api/bigquery/route.ts`](/C:/Users/akrizu/Documents/DigitalFuture/finOps/app/api/bigquery/route.ts#L351) and [`app/api/test/route.ts`](/C:/Users/akrizu/Documents/DigitalFuture/finOps/app/api/test/route.ts#L319)
+- Replace env-var secrets with a managed store such as GCP Secret Manager or HashiCorp Vault — the Pino `redact` list in [`lib/logger.ts`](/C:/Users/akrizu/Documents/DigitalFuture/finOps/lib/logger.ts#L13) covers known field names but does not prevent secrets from appearing in memory under unexpected keys
+- Add an audit trail for AI calls — neither the prompt nor the response from `generateInsights()` or `generateChatbotReply()` is stored; regulated environments require a log of what data was sent to the model and what it returned in [`lib/finops-engine.ts`](/C:/Users/akrizu/Documents/DigitalFuture/finOps/lib/finops-engine.ts#L243)
+- Add tenant isolation if the dashboard grows to serve multiple billing scopes — the current architecture is single-account, with credentials and dataset fixed at deploy time via `GCP_PROJECT_ID` and `BQ_TABLE`
 
 ### Likely Target Architecture
 
 For higher scale and stronger governance, the architecture should move toward:
 
-- BigQuery export tables -> scheduled transformation layer -> pre-aggregated serving tables
-- API layer with auth, rate limiting, and observability
-- Cache or read model for dashboard payloads
-- AI layer behind policy enforcement, logging, and redaction controls
+- BigQuery export tables → scheduled transformation layer → pre-aggregated serving tables
+- API layer with auth middleware, rate limiting, and byte-cost guards
+- Cache layer written by cron, read by request — no live BigQuery calls on user traffic
+- AI layer behind audit logging, retention policy, and model version pinning
 
-## 9. Repository Reality Check
 
-This README is based on confirmed code paths in the current repository. Where deployment lifecycle or compliance operations are discussed, those sections are recommendations unless explicitly backed by checked-in code.

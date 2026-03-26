@@ -6,7 +6,7 @@ import { env } from "@/lib/env"
 import type {
   Alert,
   AggregatedDashboard,
-  BillingRow,
+  ServiceCostRow,
   ChatbotContext,
   ChartDataPoint,
   CostDriver,
@@ -17,7 +17,7 @@ import type {
 export type {
   Alert,
   AggregatedDashboard,
-  BillingRow,
+  ServiceCostRow,
   ChatbotContext,
   ChartDataPoint,
   CostDriver,
@@ -61,18 +61,12 @@ function pctChange(
 }
 
 // ── aggregate() — pure, sync ──────────────────────────────────────────────────
-// Accepts BillingRow[] — full raw rows from BigQuery SELECT *
-// NOTE: BigQuery REST API returns numeric fields as strings — always use toNum()
+// Accepts ServiceCostRow[] — pre-aggregated rows from GROUP BY SQL query
+// effective_cost is already computed by BigQuery (cost + credits), returned as string
 
 function toNum(v: unknown): number {
   const n = Number(v)
   return isFinite(n) ? n : 0
-}
-
-function effectiveCost(row: BillingRow): number {
-  const base = toNum(row.cost)
-  const credits = (row.credits ?? []).reduce((sum, c) => sum + toNum(c.amount), 0)
-  return base + credits
 }
 
 function buildDrilldown(
@@ -96,7 +90,7 @@ function buildDrilldown(
   })
 }
 
-export function aggregate(rows: BillingRow[]): AggregatedDashboard {
+export function aggregate(rows: ServiceCostRow[]): AggregatedDashboard {
   const fmt = (n: number) => {
     // Guard: collapse tiny negative values (-0.001 etc.) to 0 to avoid "-$0"
     // Do NOT apply to positive sub-$1 values — those need decimals
@@ -109,7 +103,7 @@ export function aggregate(rows: BillingRow[]): AggregatedDashboard {
   }
 
   // ── Derive period from actual data ─────────────────────────────────────────
-  const allMonths = [...new Set(rows.map((r) => r.invoice?.month).filter(Boolean))].sort() as string[]
+  const allMonths = [...new Set(rows.map((r) => r.invoice_month).filter(Boolean))].sort() as string[]
 
   if (allMonths.length === 0) {
     return {
@@ -135,12 +129,12 @@ export function aggregate(rows: BillingRow[]): AggregatedDashboard {
   const remaining = totalDays - elapsed
 
   // ── Split rows by period ───────────────────────────────────────────────────
-  const currentRows = rows.filter((r) => r.invoice?.month === currentYYYYMM)
-  const prevRows = prevYYYYMM ? rows.filter((r) => r.invoice?.month === prevYYYYMM) : []
+  const currentRows = rows.filter((r) => r.invoice_month === currentYYYYMM)
+  const prevRows = prevYYYYMM ? rows.filter((r) => r.invoice_month === prevYYYYMM) : []
 
   // ── Totals ─────────────────────────────────────────────────────────────────
-  const mtdSpend = currentRows.reduce((sum, r) => sum + effectiveCost(r), 0)
-  const prevSpend = prevRows.reduce((sum, r) => sum + effectiveCost(r), 0)
+  const mtdSpend = currentRows.reduce((sum, r) => sum + toNum(r.effective_cost), 0)
+  const prevSpend = prevRows.reduce((sum, r) => sum + toNum(r.effective_cost), 0)
   const dailyBurnRate = elapsed > 0 ? mtdSpend / elapsed : 0
   const projectedMonthly = dailyBurnRate * totalDays
   const { pct: momPct, trend: momTrend } = pctChange(mtdSpend, prevSpend)
@@ -196,20 +190,20 @@ export function aggregate(rows: BillingRow[]): AggregatedDashboard {
   const prevSkuMap = new Map<string, number>()
 
   for (const row of currentRows) {
-    const cost = effectiveCost(row)
-    const svc = row.service?.description ?? "Unknown"
-    const proj = row.project?.name ?? row.project?.id ?? "Unknown"
-    const sku = row.sku?.description ?? "Unknown"
+    const cost = toNum(row.effective_cost)
+    const svc = row.service_description ?? "Unknown"
+    const proj = row.project_name ?? row.project_id ?? "Unknown"
+    const sku = row.sku_description ?? "Unknown"
     serviceMap.set(svc, (serviceMap.get(svc) ?? 0) + cost)
     projectMap.set(proj, (projectMap.get(proj) ?? 0) + cost)
     skuMap.set(sku, (skuMap.get(sku) ?? 0) + cost)
   }
 
   for (const row of prevRows) {
-    const cost = effectiveCost(row)
-    const svc = row.service?.description ?? "Unknown"
-    const proj = row.project?.name ?? row.project?.id ?? "Unknown"
-    const sku = row.sku?.description ?? "Unknown"
+    const cost = toNum(row.effective_cost)
+    const svc = row.service_description ?? "Unknown"
+    const proj = row.project_name ?? row.project_id ?? "Unknown"
+    const sku = row.sku_description ?? "Unknown"
     prevServiceMap.set(svc, (prevServiceMap.get(svc) ?? 0) + cost)
     prevProjectMap.set(proj, (prevProjectMap.get(proj) ?? 0) + cost)
     prevSkuMap.set(sku, (prevSkuMap.get(sku) ?? 0) + cost)
@@ -222,8 +216,8 @@ export function aggregate(rows: BillingRow[]): AggregatedDashboard {
   // ── charts (entire current data year, zero-filled) ────────────────────────
   const monthlyMap = new Map<string, number>()
   for (const row of rows) {
-    const m = row.invoice?.month
-    if (m) monthlyMap.set(m, (monthlyMap.get(m) ?? 0) + effectiveCost(row))
+    const m = row.invoice_month
+    if (m) monthlyMap.set(m, (monthlyMap.get(m) ?? 0) + toNum(row.effective_cost))
   }
 
   const chartYear = currentYYYYMM.slice(0, 4)

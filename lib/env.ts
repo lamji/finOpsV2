@@ -10,6 +10,9 @@ import { z } from 'zod'
 const envSchema = z.object({
   // Runtime
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  // Deployment tier — distinguishes staging from production at runtime
+  // since Next.js only supports NODE_ENV: development | test | production
+  DEPLOY_ENV: z.enum(['development', 'staging', 'production']).default('development'),
 
   // Google Cloud / BigQuery
   GCP_PROJECT_ID: z.string().default('mock-project'),
@@ -40,7 +43,7 @@ function validateEnv() {
       .join('\n')
     throw new Error(
       `\n\n[finOps] Environment configuration error:\n${formatted}\n\n` +
-        `Copy .env.example to .env.development and fill in the missing values.\n`,
+        `Copy .env.example to .env.local (all envs) or .env.development.local / .env.production.local and fill in the missing values.\n`,
     )
   }
 

@@ -8,9 +8,7 @@ export function DashboardHeader() {
       )}
     >
       <div className="flex flex-col gap-2">
-        <div className="inline-flex w-fit items-center rounded-full border border-border/70 bg-card px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-          FinOps Console
-        </div>
+      
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
             Cloud Spend Dashboard

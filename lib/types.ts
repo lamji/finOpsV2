@@ -97,11 +97,14 @@ export interface AggregatedDashboard {
   summary: FinancialSummary
 }
 
-/** Aggregated row returned by the GROUP BY SQL query — one row per (service, month) */
+/** Aggregated row returned by the GROUP BY SQL query — one row per (month, service, project, sku) */
 export interface ServiceCostRow {
-  service_description: string   // service.description
-  invoice_month: string         // invoice.month — YYYYMM format
-  effective_cost: number        // cost + credits, already summed by SQL
+  invoice_month: string          // invoice.month — YYYYMM format
+  service_description: string    // service.description
+  project_name: string | null    // project.name (null for org-level charges)
+  project_id: string | null      // project.id (null for org-level charges)
+  sku_description: string        // sku.description
+  effective_cost: string         // cost + credits, pre-summed by BigQuery (REST API returns as string)
 }
 
 // ── BigQuery wire types ─────────────────────────────────────────────────────

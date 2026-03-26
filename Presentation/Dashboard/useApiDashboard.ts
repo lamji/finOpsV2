@@ -22,6 +22,8 @@ export function useApiDashboard() {
     queryKey: ["dashboard"],
     queryFn: fetchDashboard,
     staleTime: 5 * 60 * 1000, // 5 min — matches Redis TTL
+    refetchInterval: 5 * 60 * 1000, // poll every 5 min (aligns with Redis TTL)
+    refetchIntervalInBackground: false, // pause when tab is not active
     retry: 1,
   })
 }
