@@ -24,8 +24,8 @@ const envSchema = z.object({
   BQ_DATASET: z.string().default('mock_dataset'),
   BQ_TABLE: z.string().default('mock_table'),
 
-  // Anthropic AI
-  ANTHROPIC_API_KEY: z.string().min(1, 'ANTHROPIC_API_KEY is required for AI insights'),
+  // Anthropic AI (optional at build time — graceful degradation if missing at runtime)
+  ANTHROPIC_API_KEY: z.string().default(''),
 
   // Redis (optional — graceful degradation if not set)
   REDIS_URL: z.string().optional(),

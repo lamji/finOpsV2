@@ -237,6 +237,7 @@ export function aggregate(rows: ServiceCostRow[]): AggregatedDashboard {
 export async function generateInsights(
   aggregated: AggregatedDashboard,
 ): Promise<Alert[]> {
+  if (!env.ANTHROPIC_API_KEY) return []
   const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY })
 
   const { statistics, byService, byProject, bySku, summary } = aggregated
