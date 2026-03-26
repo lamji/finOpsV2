@@ -44,6 +44,12 @@ useApiDashboard() [TanStack useQuery, 5min staleTime + refetchInterval]
 - Redis TTL: 300s default, 1800s heavy, 0 = skip cache
 - Polling: `refetchInterval: 5 * 60 * 1000` (aligned with Redis TTL)
 
+## First-time Setup (required after cloning)
+```bash
+git config core.hooksPath .githooks   # activate branch protection hooks
+```
+This blocks direct pushes to `staging` and `production` from any terminal.
+
 ## Hard Rules
 - Types ONLY in `lib/types/[feature].ts` — never inline
 - `process.env` NEVER in components — always `lib/env.ts`
