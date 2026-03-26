@@ -34,7 +34,6 @@ npm run dev
 git fetch --all
 git checkout staging
 git pull origin staging
-npx dotenv-cli -e .env.staging -- npm run dev
 ```
 
 ### `/env production`
@@ -42,7 +41,7 @@ npx dotenv-cli -e .env.staging -- npm run dev
 git fetch --all
 git checkout production
 git pull origin production
-npm run build && npm run start
+
 ```
 
 ## Rules

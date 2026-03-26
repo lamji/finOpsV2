@@ -1,8 +1,12 @@
 /**
- * PreToolUse hook — Branch Protection + Config Protection
+ * PreToolUse hook — Branch Protection + Push Protection + Config Protection
  *
  * Branch check (hard block, no bypass):
  *   - staging or production branch → BLOCK all edits, no exceptions
+ *
+ * Push protection (hard block, no bypass):
+ *   - git push targeting staging or production → BLOCK, no exceptions
+ *   - Applies to both AI and user-initiated commands
  *
  * Config protection (approval override):
  *   1. Agent tries to edit a protected file → BLOCK, tell agent to ask user
@@ -68,6 +72,22 @@ process.stdin.on("end", () => {
     )
     process.exit(0)
   }
+
+  // ── Push protection — block git push to staging or production ────────────
+  const command = args.command || ""
+  const isPushToLockedBranch =
+    /git\s+push\b/.test(command) && /\b(staging|production)\b/.test(command)
+
+  if (isPushToLockedBranch) {
+    console.log(
+      JSON.stringify({
+        continue: false,
+        reason: `🚫 PUSH BLOCKED — Pushing directly to 'staging' or 'production' is not allowed. No bypass, no exceptions.\n\nStaging and production are for local testing only. Push your changes to 'develop' instead:\n\n  git push origin develop\n\nPromotion to staging/production must go through the proper release workflow.`,
+      }),
+    )
+    process.exit(0)
+  }
+  // ──────────────────────────────────────────────────────────────────────────
 
   const filePath = args.file_path || ""
   const basename = path.basename(filePath)
