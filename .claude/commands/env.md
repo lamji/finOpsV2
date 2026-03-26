@@ -31,9 +31,6 @@ npm run dev
 
 ### `/env staging`
 ```bash
-git add -A
-git commit -m "chore: save changes before switching to staging"
-git push origin HEAD
 git fetch --all
 git checkout staging
 git pull origin staging
@@ -42,9 +39,6 @@ npx dotenv-cli -e .env.staging -- npm run dev
 
 ### `/env production`
 ```bash
-git add -A
-git commit -m "chore: save changes before switching to production"
-git push origin HEAD
 git fetch --all
 git checkout production
 git pull origin production
