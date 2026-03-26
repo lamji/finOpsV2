@@ -1,38 +1,44 @@
 ---
-name: Project Status - FinOps Dashboard MVP
-description: Current build state, what's done, what's next, and key decisions made
+name: Project Status - FinOps Dashboard
+description: Current build state, what's done, what's next, and what's not started (updated 2026-03-27)
 type: project
 ---
 
-Dashboard MVP is in active development as of 2026-03-21. All structural components are built and functional with mock data.
+**Why:** Building a production-grade FinOps dashboard — real GCP BigQuery billing data, AI insights via Anthropic, Redis caching, and auto-polling client.
 
-**Why:** Building a real-time FinOps dashboard for tracking cloud spend ($50k/month budget, March 2026). Real API integration is a future phase.
-
-**How to apply:** Don't re-scaffold or re-explain structure. Jump straight into the next feature layer. Assume all base components exist and work.
+**How to apply:** Don't re-scaffold or re-explain base structure. All core systems are live. Jump straight into the next feature layer.
 
 ## Done ✅
 - Next.js 16 + React 19 + TypeScript setup
-- TailwindCSS v4 + shadcn/ui integration
+- TailwindCSS v4 + shadcn/ui (button, chart, sonner)
 - Dark mode (press 'd' to toggle)
-- All layout components: Header, Footer, Sidebar, Content wrapper
-- StatsSection with 6 metric cards (MTD Spend, Daily Burn Rate, Projected Monthly, Budget Remaining, Budget Utilization, Monthly Budget)
+- All layout components: Header, Footer, Sidebar, Content, DataSync
+- StatsSection (4 stat cards: MTD Spend, Daily Burn Rate, Projected Monthly, Previous Month)
 - StatCard component (label, value, change%, trend, description)
-- MainContent — Cost Drivers breakdown with progress bars (Compute 35%, Storage 28%, Network 18%, Services 12%, Other 7%)
-- ChartSection — structure in place, Recharts not fully wired yet
-- useGetData() hook — central mock data source, type-safe
-- ThemeProvider with keyboard shortcut
-- Agent memory system initialized (2026-03-21)
+- MainContent — Cost Drivers breakdown by category with progress bars
+- ChartSection — real Recharts LineChart wired to live data via useDashboard()
+- DashboardSidebar — AI insights alerts (warning/info/success) + period summary
+- DashboardDataSync — toast.error() side-effect on API failure
+- BigQuery API route (GET /api/bigquery) — OAuth, fetch, aggregate, cache, AI
+- lib/finops-engine.ts — aggregate() + generateInsights() (Anthropic claude-haiku-4-5)
+- Redis cache layer (300s TTL, graceful degradation if REDIS_URL not set)
+- TanStack Query setup (lib/query-client.ts, QueryProvider)
+- useApiDashboard() — TanStack useQuery → /api/bigquery
+- useDashboard() — maps API payload to UI shape
+- Auto-polling: refetchInterval 5min aligned with Redis TTL, paused on inactive tabs
+- .claude/ config: CLAUDE.md, rules/, commands/review.md, settings.json with deny rules
+- GitHub Actions CI workflow (.github/workflows/ci.yml)
 
 ## Next Up 🟡
-- Wire up Recharts chart in ChartSection (area or line chart for spend over time)
-- Display alerts section (3 alerts exist in useGetData)
-- Quick actions functionality (4 actions exist in useGetData)
+- Drill-down views: byService, byProject, bySku (data exists in API response, not yet rendered)
+- Date range filter / period selector on ChartSection
+- Export report feature (QuickAction exists, not wired)
+- Budget alert notifications
 
 ## Not Started ❌
 - Auth / user management
-- Real API endpoints
-- Database integration
-- Export / reporting
-- Budget alert notifications
-- Cost optimization recommendations
 - Detailed analytics sub-pages
+- Pub/Sub → SSE real-time push (Option 2 live data)
+- Pagination for large BigQuery datasets
+- Cost optimization recommendations UI
+- Docker / environment isolation (dev/staging/prod)

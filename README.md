@@ -44,9 +44,17 @@ The project already uses npm and ships a `package-lock.json`, and the main local
 
 ### Configure Environment
 
-Create `.env.development` from the template values in [`.env.example`](/C:/Users/akrizu/Documents/DigitalFuture/finOps/.env.example#L1).
+Three environment files are supported — one per tier. Use [`.env.example`](.env.example) as the template for required and optional values.
 
-Required values:
+| File | Tier | `NODE_ENV` | `DEPLOY_ENV` |
+|------|------|-----------|-------------|
+| `.env.development` | Local dev | `development` | `development` |
+| `.env.staging` | Staging | `test` | `staging` |
+| `.env.production` | Production | `production` | `production` |
+
+All three are git-ignored. Never commit them.
+
+Required values (all tiers):
 
 - `ANTHROPIC_API_KEY`
 - `GCP_PROJECT_ID`
@@ -57,31 +65,33 @@ Required values:
 
 Optional values:
 
-- `REDIS_URL`
-- `LOG_LEVEL`
-- `NODE_ENV`
+- `REDIS_URL` — caching disabled if not set
+- `LOG_LEVEL` — defaults to `info`
 
 Environment variables are validated at module load by Zod in [`lib/env.ts`](/C:/Users/akrizu/Documents/DigitalFuture/finOps/lib/env.ts#L10). Invalid configuration fails fast before request handling starts.
 
 ### Run Locally
 
+**Development** — auto-loads `.env.development`:
 ```bash
 npm run dev
 ```
 
-The development server uses Turbopack via [`package.json`](/C:/Users/akrizu/Documents/DigitalFuture/finOps/package.json#L6).
+**Staging** — loads `.env.staging` via dotenv-cli:
+```bash
+npx dotenv-cli -e .env.staging -- npm run dev
+```
+
+**Production build** — auto-loads `.env.production`:
+```bash
+npm run build
+npm run start
+```
 
 Open:
 
 ```text
 http://localhost:3000
-```
-
-### Production-Like Local Run
-
-```bash
-npm run build
-npm run start
 ```
 
 ### Quality Checks

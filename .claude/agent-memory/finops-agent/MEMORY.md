@@ -9,5 +9,5 @@
 - [Agent Tools — Web Search Fix](feedback_agent_tools.md) — Add WebSearch/WebFetch to agent frontmatter, not MCP servers
 
 ## Project
-- [Project Status](project_status.md) — What's built, what's next, what's not started (updated 2026-03-21)
+- [Project Status](project_status.md) — What's built, what's next, what's not started (updated 2026-03-27)
 - [Architecture Decisions](project_architecture.md) — Data flow, styling rules, key constants
