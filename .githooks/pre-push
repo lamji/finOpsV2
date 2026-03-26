@@ -1,0 +1,31 @@
+#!/bin/sh
+# pre-push hook — block direct pushes to staging and production
+#
+# Applies to ALL pushes from this machine (terminal, IDE, AI tools).
+# To activate: git config core.hooksPath .githooks
+# Cannot be bypassed without --no-verify (which is itself blocked by Claude hook).
+
+LOCKED_BRANCHES="staging production"
+
+while read local_ref local_sha remote_ref remote_sha; do
+  # Extract the branch name from refs/heads/staging → staging
+  branch=$(echo "$remote_ref" | sed 's|refs/heads/||')
+
+  for locked in $LOCKED_BRANCHES; do
+    if [ "$branch" = "$locked" ]; then
+      echo ""
+      echo "🚫 PUSH BLOCKED — Direct push to '$branch' is not allowed."
+      echo ""
+      echo "   staging and production are protected branches."
+      echo "   Push to 'develop' instead:"
+      echo ""
+      echo "     git push origin develop"
+      echo ""
+      echo "   Promotion to $branch must go through the proper release workflow."
+      echo ""
+      exit 1
+    fi
+  done
+done
+
+exit 0
