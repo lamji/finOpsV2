@@ -18,13 +18,6 @@ export function DashboardHeader() {
           </p>
         </div>
       </div>
-
-      <div className="hidden rounded-2xl border border-border/70 bg-card px-4 py-2 text-right sm:block">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-          Workspace
-        </p>
-        <p className="text-sm font-medium text-foreground">finOps control</p>
-      </div>
     </header>
   )
 }

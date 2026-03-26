@@ -11,7 +11,7 @@ export function DashboardFooter() {
         <p>© 2026 finOps. All rights reserved.</p>
 
         <div className="flex items-center gap-6">
-          <a href="#" className="transition-colors hover:text-foreground">
+          {/* <a href="#" className="transition-colors hover:text-foreground">
             Documentation
           </a>
           <a href="#" className="transition-colors hover:text-foreground">
@@ -19,7 +19,7 @@ export function DashboardFooter() {
           </a>
           <a href="#" className="transition-colors hover:text-foreground">
             Settings
-          </a>
+          </a> */}
         </div>
       </div>
     </footer>
