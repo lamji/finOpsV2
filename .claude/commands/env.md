@@ -22,7 +22,7 @@ Use this command to switch to a specific environment locally. It will checkout t
 ```bash
 git add -A
 git commit -m "chore: save changes before switching to development"
-git push origin develop
+git push origin HEAD
 git fetch --all
 git checkout develop
 git pull origin develop
@@ -33,7 +33,7 @@ npm run dev
 ```bash
 git add -A
 git commit -m "chore: save changes before switching to staging"
-git push origin develop
+git push origin HEAD
 git fetch --all
 git checkout staging
 git pull origin staging
@@ -44,7 +44,7 @@ npx dotenv-cli -e .env.staging -- npm run dev
 ```bash
 git add -A
 git commit -m "chore: save changes before switching to production"
-git push origin develop
+git push origin HEAD
 git fetch --all
 git checkout production
 git pull origin production
