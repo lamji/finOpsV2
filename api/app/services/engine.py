@@ -26,23 +26,43 @@ MONTH_NAMES: dict[str, str] = {
 # ── Helpers (match TS helpers exactly) ───────────────────────────────────
 
 def _short_month(yyyymm: str) -> str:
+    """
+    Converts a YYYYMM string to a 3-letter month label.
+    Slices characters 4–6 to extract the month number, then looks it up in MONTH_NAMES.
+    Used for chart X-axis labels.
+    Example: "202503" → "Mar"
+    """
     return MONTH_NAMES.get(yyyymm[4:6], yyyymm[4:6])
 
 
 def _long_period(yyyymm: str) -> str:
+    """
+    Converts a YYYYMM string to a human-readable month + year label.
+    Same month slice as _short_month but also prepends the 4-digit year.
+    Used in stat card descriptions, labels, and sidebar period display.
+    Example: "202503" → "Mar 2026"
+    """
     return f"{MONTH_NAMES.get(yyyymm[4:6], yyyymm[4:6])} {yyyymm[:4]}"
 
 
 def _days_in_month(year: int, month: int) -> int:
+    """
+    Returns the total number of days in a given month.
+    Uses Python's calendar.monthrange(year, month) which returns
+    (weekday_of_first_day, total_days) — takes index [1] for the day count.
+    Handles leap years automatically (e.g. Feb 2024 → 29).
+    Example: (2026, 3) → 31
+    """
     return calendar.monthrange(year, month)[1]
 
 
 def _fmt(n: float) -> str:
     """
-    Matches TS Intl.NumberFormat USD:
-    - Tiny negatives near zero (e.g. -0.001) → $0  (avoids "-$0")
-    - < $1  → 2 decimal places  ($0.53)
-    - >= $1 → 0 decimal places with comma  ($1,584)
+    Formats a float as a USD dollar string. Matches TS Intl.NumberFormat USD behaviour:
+    - Tiny negatives that round to 0 (e.g. -0.001) → "$0"  avoids displaying "-$0"
+    - Values under $1  → 2 decimal places:  "$0.53"
+    - Values $1 and above → 0 decimals with comma separators: "$1,584"
+    Examples: 1584.5 → "$1,585" | 0.53 → "$0.53" | -0.001 → "$0"
     """
     safe = 0.0 if (n < 0 and round(n) == 0) else n
     if abs(safe) < 1:
@@ -51,7 +71,22 @@ def _fmt(n: float) -> str:
 
 
 def _pct_change(current: float, previous: float) -> tuple[str, str]:
-    """Returns (pct_string, trend) — matches TS pctChange()"""
+    """
+    Calculates month-over-month % change and trend direction.
+    Matches TS pctChange() exactly.
+
+    - If previous == 0 → returns ("N/A", "neutral") — avoids division by zero
+    - delta = (current - previous) / previous * 100
+    - trend: "neutral" if |delta| < 1% (noise floor), "up" if positive, "down" if negative
+      The 1% floor prevents trivial fluctuations from showing as up/down arrows.
+    - Returns a signed string like "+12%" or "-5%"
+
+    Examples:
+      (13, 9)  → ("+44%", "up")
+      (9, 13)  → ("-31%", "down")
+      (10, 10) → ("+0%", "neutral")
+      (5, 0)   → ("N/A", "neutral")
+    """
     if previous == 0:
         return "N/A", "neutral"
     delta = (current - previous) / previous * 100
@@ -67,10 +102,22 @@ def _build_drilldown(
     top_n: int | None = None,
 ) -> list[CostDriver]:
     """
-    Matches TS buildDrilldown():
-    - sorted DESC by amount
-    - percentage: Math.round → integer
-    - change: just the pct string ("+12%" or "N/A")  ← matches TS `change: pct`
+    Converts a {name: amount} spend dict into a ranked list of CostDriver objects.
+    Matches TS buildDrilldown() exactly.
+
+    Steps:
+    1. Sort entries by amount DESC (highest spend first)
+    2. Optionally slice to top_n (used for SKUs — top 20 only, to avoid noise)
+    3. For each entry, call _pct_change(amount, prev_map.get(name, 0)) for MoM change.
+       prev_map.get(name, 0) returns 0 if the service didn't exist last month → "N/A"
+    4. Calculate percentage = round(amount / total_spend * 100) as an integer (e.g. 35)
+       Guards against division by zero when total_spend == 0
+    5. Return CostDriver objects with name, amount, percentage, trend, change
+
+    Used three times in aggregate():
+      - by_service: all services ranked by spend
+      - by_project: all projects ranked by spend
+      - by_sku: top 20 SKUs only
     """
     items = sorted(current_map.items(), key=lambda x: x[1], reverse=True)
     if top_n:
@@ -93,7 +140,10 @@ def _build_drilldown(
 
 def aggregate(rows: list[ServiceCostRow]) -> AggregatedDashboard:
 
-    # Step 1 — derive period from data
+    # ── Step 1 — Derive period from data ──────────────────────────────────
+    # Build a deduplicated, sorted set of all YYYYMM strings present in the rows.
+    # Example: ["202508", "202509"] — latest = current period, second latest = previous.
+    # If no months exist at all → return an empty dashboard immediately (safe fallback).
     all_months = sorted({r.invoice_month for r in rows if r.invoice_month})
 
     if not all_months:
@@ -109,10 +159,15 @@ def aggregate(rows: list[ServiceCostRow]) -> AggregatedDashboard:
             ),
         )
 
-    current_yyyymm = all_months[-1]
-    prev_yyyymm = all_months[-2] if len(all_months) >= 2 else None
+    current_yyyymm = all_months[-1]                                          # most recent month in data
+    prev_yyyymm    = all_months[-2] if len(all_months) >= 2 else None        # second most recent, or None
 
-    # Step 1.5 — day math
+    # ── Step 1.5 — Day math ───────────────────────────────────────────────
+    # Parse year and month from the current period string, then get total days.
+    # Compare the data's latest month to today's actual calendar month:
+    #   - Match  (data IS the current month) → elapsed = today's date (partial month, e.g. day 21)
+    #   - No match (data is a past month)    → elapsed = total_days (treat as complete month)
+    # remaining = days left in the month, used in the sidebar "This Month" card.
     year  = int(current_yyyymm[:4])
     month = int(current_yyyymm[4:6])
     total_days = _days_in_month(year, month)
@@ -122,18 +177,54 @@ def aggregate(rows: list[ServiceCostRow]) -> AggregatedDashboard:
     elapsed   = now.day if current_yyyymm == today_yyyymm else total_days
     remaining = total_days - elapsed
 
-    # Step 2 — split rows
+    # ── Step 2 — Split rows by month ──────────────────────────────────────
+    # Separate all rows into two buckets for independent aggregation.
+    # current_rows = rows for the latest month (MTD spend source)
+    # prev_rows    = rows for the previous month (MoM comparison source)
     current_rows = [r for r in rows if r.invoice_month == current_yyyymm]
     prev_rows    = [r for r in rows if r.invoice_month == prev_yyyymm] if prev_yyyymm else []
 
-    # Step 3 — totals
+    # ── Step 3 — Financial totals ─────────────────────────────────────────
+    # mtd_spend:        sum of effective_cost for all current-month rows
+    # prev_spend:       sum of effective_cost for all previous-month rows (full month)
+    # daily_burn_rate:  average daily spend = mtd / elapsed days (0 if elapsed == 0)
+    # projected:        linear extrapolation to end of month = daily_rate × total_days
+    # mom_pct/trend:    month-over-month % change and direction via _pct_change()
     mtd_spend        = sum(r.effective_cost for r in current_rows)
     prev_spend       = sum(r.effective_cost for r in prev_rows)
     daily_burn_rate  = mtd_spend / elapsed if elapsed > 0 else 0.0
     projected        = daily_burn_rate * total_days
     mom_pct, mom_trend = _pct_change(mtd_spend, prev_spend)
 
-    # Step 4 — statistics (matches TS statistics[] exactly)
+    # ── Step 4 — Statistics: 4 stat cards ────────────────────────────────
+    # Each card has: label, value, change (MoM context string), trend, description.
+    # change field falls back gracefully when no prior data exists.
+    #
+    # Card 1 — MTD Spend
+    #   value:       total spend so far this month  e.g. "$13"
+    #   change:      MoM % vs last month            e.g. "+40% vs. last month"
+    #                fallback: "No prior month data" when prev_spend == 0
+    #   trend:       derived from MoM direction (up/down/neutral)
+    #   description: period label + days elapsed    e.g. "Sep 2025 — 30 of 30 days"
+    #
+    # Card 2 — Daily Burn Rate
+    #   value:       avg daily spend                e.g. "$0/day"
+    #   change:      projected 30-day cost          e.g. "$0 projected 30-day"
+    #   trend:       always "neutral" — burn rate has no inherent good/bad direction
+    #   description: how many days the avg is based on
+    #
+    # Card 3 — Projected Monthly
+    #   value:       daily_rate × total_days        e.g. "$19"
+    #   change:      MoM % vs previous period       e.g. "+40% vs. Aug 2025"
+    #                fallback: "No comparison" when no prior data
+    #   trend:       same as Card 1 (shared mom_trend)
+    #   description: clarifies this is an extrapolation
+    #
+    # Card 4 — Previous Month Spend
+    #   label:       dynamic e.g. "Aug 2025 Spend" — falls back to "Previous Month"
+    #   value:       actual full-month spend        e.g. "$9"
+    #                fallback: "—" when only one month of data exists
+    #   trend:       always "neutral" — historical fact, no direction implied
     statistics = [
         FinancialMetric(
             label="MTD Spend",
@@ -169,7 +260,12 @@ def aggregate(rows: list[ServiceCostRow]) -> AggregatedDashboard:
         ),
     ]
 
-    # Step 5 — summary
+    # ── Step 5 — Summary ──────────────────────────────────────────────────
+    # Simple period metadata consumed by DashboardSidebar "This Month" card.
+    # period:        human-readable label  e.g. "Sep 2025"
+    # daysElapsed:   days used so far      e.g. 30
+    # daysInMonth:   total days in period  e.g. 30
+    # daysRemaining: days left             e.g. 0
     summary = FinancialSummary(
         period=_long_period(current_yyyymm),
         daysElapsed=elapsed,
@@ -177,7 +273,22 @@ def aggregate(rows: list[ServiceCostRow]) -> AggregatedDashboard:
         daysRemaining=remaining,
     )
 
-    # Step 6 — dimension maps (byService, byProject, bySku — no category/drilldown)
+    # ── Step 6 — Dimension maps ───────────────────────────────────────────
+    # Loop through current_rows and prev_rows separately, accumulating costs
+    # into defaultdict(float) accumulators — one set for current, one for previous.
+    #
+    # Three dimensions tracked:
+    #   service_map:  keyed by row.service_description  e.g. "Cloud Storage"
+    #   project_map:  keyed by row.project_name or row.project_id  e.g. "DF-SANDBOX"
+    #   sku_map:      keyed by row.sku_description  e.g. "Standard Storage US"
+    #
+    # Falls back to "Unknown" if a field is missing/None.
+    # prev_* maps are used by _build_drilldown() for MoM % change per dimension entry.
+    #
+    # Then calls _build_drilldown() three times to produce ranked CostDriver lists:
+    #   by_service: all services sorted by spend DESC
+    #   by_project: all projects sorted by spend DESC
+    #   by_sku:     top 20 SKUs only (top_n=20) — avoids long-tail noise
     service_map: dict[str, float] = defaultdict(float)
     project_map: dict[str, float] = defaultdict(float)
     sku_map:     dict[str, float] = defaultdict(float)
@@ -205,8 +316,16 @@ def aggregate(rows: list[ServiceCostRow]) -> AggregatedDashboard:
     by_project = _build_drilldown(project_map, prev_project_map, mtd_spend)
     by_sku     = _build_drilldown(sku_map, prev_sku_map, mtd_spend, top_n=20)
 
-    # Step 7 — charts: ALL 12 months of current year, zero-fill missing
-    # Matches TS: Array.from({ length: 12 }, ...) with monthlyMap.get(yyyymm) ?? 0
+    # ── Step 7 — Charts: full year, zero-filled ───────────────────────────
+    # Builds a monthly total map from ALL rows (not just current month),
+    # then generates exactly 12 ChartDataPoint entries — one per month of the
+    # current year (Jan → Dec), regardless of whether data exists for that month.
+    #
+    # Months with no rows get expenses=0 via .get(..., 0) — zero-fill ensures
+    # the chart always has a complete 12-month X-axis even with sparse data.
+    #
+    # expenses is rounded to the nearest integer (no cents on a bar chart).
+    # chart_year is derived from current_yyyymm so it always matches the data year.
     monthly_map: dict[str, float] = defaultdict(float)
     for row in rows:
         if row.invoice_month:
