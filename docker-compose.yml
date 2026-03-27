@@ -1,46 +1,35 @@
 services:
-  # ── UI — Next.js (pure frontend) ─────────────────────────────────────────
   ui:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     ports:
       - "3000:3000"
     environment:
       - NODE_ENV=production
-      - DEPLOY_ENV=development
-      # Points browser to the FastAPI service
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - DEPLOY_ENV=${DEPLOY_ENV:-development}
     depends_on:
       - api
     restart: unless-stopped
 
-  # ── API — FastAPI (backend service) ──────────────────────────────────────
   api:
+    env_file:
+      - ${ENV_FILE:-.env.local}
     build:
       context: ./api
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
     environment:
-      # GCP / BigQuery
-      - GCP_PROJECT_ID=${GCP_PROJECT_ID}
-      - GCP_CLIENT_EMAIL=${GCP_CLIENT_EMAIL}
-      - GCP_PRIVATE_KEY=${GCP_PRIVATE_KEY}
-      - BQ_DATASET=${BQ_DATASET}
-      - BQ_TABLE=${BQ_TABLE}
-      # Anthropic
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      # Redis — internal service name
       - REDIS_URL=redis://redis:6379
-      # Runtime
       - LOG_LEVEL=info
     depends_on:
       redis:
         condition: service_healthy
     restart: unless-stopped
 
-  # ── Redis — shared cache ──────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     ports:

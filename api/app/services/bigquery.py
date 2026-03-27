@@ -13,12 +13,34 @@ logger = logging.getLogger(__name__)
 _INCLUDE_CREDITS = False
 
 
+def _normalize_private_key(raw_key: str) -> str:
+    normalized = raw_key.strip()
+
+    if (
+        len(normalized) >= 2
+        and normalized[0] == normalized[-1]
+        and normalized[0] in {"'", '"'}
+    ):
+        normalized = normalized[1:-1]
+
+    normalized = normalized.replace("\\r\\n", "\n").replace("\\n", "\n")
+    normalized = normalized.replace("\r\n", "\n").replace("\r", "\n").strip()
+
+    if "-----BEGIN PRIVATE KEY-----" not in normalized:
+        raise ValueError("GCP_PRIVATE_KEY is missing a valid PEM header")
+
+    if "-----END PRIVATE KEY-----" not in normalized:
+        raise ValueError("GCP_PRIVATE_KEY is missing a valid PEM footer")
+
+    return f"{normalized}\n"
+
+
 def _get_client() -> bigquery.Client:
     credentials = service_account.Credentials.from_service_account_info(
         {
             "type": "service_account",
             "project_id": settings.GCP_PROJECT_ID,
-            "private_key": settings.GCP_PRIVATE_KEY.replace("\\n", "\n"),
+            "private_key": _normalize_private_key(settings.GCP_PRIVATE_KEY),
             "client_email": settings.GCP_CLIENT_EMAIL,
             "token_uri": "https://oauth2.googleapis.com/token",
         },

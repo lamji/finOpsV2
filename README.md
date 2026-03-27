@@ -94,6 +94,36 @@ Open:
 http://localhost:3000
 ```
 
+### Run with Docker
+Important note: `docker compose` does not auto-load `.env.development`, `.env.staging`, or `.env.production`. The API service reads secrets from `ENV_FILE` and defaults to `.env.local` when `ENV_FILE` is not set.
+
+Recommended commands:
+
+```bash
+# default local run
+docker compose up --build
+
+# staging
+ENV_FILE=.env.staging docker compose up --build
+
+# production
+ENV_FILE=.env.production docker compose up --build
+```
+
+On PowerShell:
+
+```powershell
+$env:ENV_FILE = ".env.staging"
+docker compose up --build
+```
+
+After changing `docker-compose.yml` or switching env files, rebuild cleanly:
+
+```bash
+docker compose down
+docker compose up --build --remove-orphans
+```
+
 ### Quality Checks
 
 ```bash
