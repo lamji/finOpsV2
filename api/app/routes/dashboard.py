@@ -3,6 +3,7 @@ import json
 import logging
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import JSONResponse
 
 from app.models import DashboardResponse
 from app.services import ai, bigquery, cache, engine
@@ -25,7 +26,7 @@ async def get_dashboard(
     project_id = settings.GCP_PROJECT_ID
     key = _cache_key(project_id)
 
-    # ── Cache check ───────────────────────────────────────────────────────
+    # ── Redis cache check ─────────────────────────────────────────────────
     if not no_cache:
         cached = cache.cache_get(key)
         if cached:
@@ -40,9 +41,6 @@ async def get_dashboard(
         logger.error(f"BigQuery fetch failed: {e}")
         raise HTTPException(status_code=503, detail=f"BigQuery unavailable: {e}")
 
-    if not rows:
-        raise HTTPException(status_code=204, detail="No billing data found")
-
     # ── Aggregate ─────────────────────────────────────────────────────────
     aggregated = engine.aggregate(rows)
 
@@ -55,7 +53,6 @@ async def get_dashboard(
         source="db",
         statistics=aggregated.statistics,
         charts=aggregated.charts,
-        drilldown=aggregated.drilldown,
         byService=aggregated.byService,
         byProject=aggregated.byProject,
         bySku=aggregated.bySku,
@@ -63,15 +60,28 @@ async def get_dashboard(
         summary=aggregated.summary,
     )
 
-    # ── Write to cache ────────────────────────────────────────────────────
+    # ── Write to cache (only on success, matches TS: only cache HTTP 200) ─
     cache.cache_set(key, json.loads(payload.model_dump_json()), cache.TTL_DEFAULT)
     logger.info("Dashboard fetched from BigQuery and cached")
 
     return payload
 
 
+@router.delete("/dashboard")
+async def flush_cache() -> JSONResponse:
+    """Flush entire Redis cache — matches TS DELETE /api/bigquery"""
+    try:
+        client = cache._get_client()
+        if client:
+            client.flushall()
+        return JSONResponse({"status": 200, "message": "Redis cache flushed"})
+    except Exception as e:
+        logger.error(f"Redis flush failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 async def _run_insights(aggregated):
-    """Run AI insights in a thread pool to avoid blocking the event loop."""
+    """Run blocking Anthropic call in thread pool — keeps event loop free."""
     import asyncio
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, ai.generate_insights, aggregated)

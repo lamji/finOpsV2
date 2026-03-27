@@ -48,9 +48,9 @@ class ServiceCostRow(BaseModel):
 
 
 class AggregatedDashboard(BaseModel):
+    """Matches TS AggregatedDashboard — no drilldown field"""
     statistics: list[FinancialMetric]
     charts: list[ChartDataPoint]
-    drilldown: list[CostDriver]
     byService: list[CostDriver]
     byProject: list[CostDriver]
     bySku: list[CostDriver]
@@ -58,11 +58,11 @@ class AggregatedDashboard(BaseModel):
 
 
 class DashboardResponse(BaseModel):
+    """Matches TS BigQueryDashboardResponse exactly"""
     status: int
     source: Literal["cached", "db"]
     statistics: list[FinancialMetric]
     charts: list[ChartDataPoint]
-    drilldown: list[CostDriver]
     byService: list[CostDriver]
     byProject: list[CostDriver]
     bySku: list[CostDriver]

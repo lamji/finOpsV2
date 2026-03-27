@@ -1,12 +1,11 @@
 """
-FinOps Engine — Python port of lib/finops-engine.ts
-aggregate(rows) → AggregatedDashboard
+FinOps Engine — Python port of lib/finops-engine.ts aggregate()
+Aligned exactly with TS output shape and behaviour.
 """
 
 import calendar
 from collections import defaultdict
 from datetime import datetime
-from typing import Optional
 
 from app.models import (
     AggregatedDashboard,
@@ -17,64 +16,21 @@ from app.models import (
     ServiceCostRow,
 )
 
-# ── Service → Category map ────────────────────────────────────────────────
-
-SERVICE_CATEGORY_MAP: dict[str, str] = {
-    # Compute
-    "Compute Engine": "Compute",
-    "Google Kubernetes Engine": "Compute",
-    "Cloud Run": "Compute",
-    "App Engine": "Compute",
-    "Cloud Functions": "Compute",
-    "Bare Metal Solution": "Compute",
-    "VMware Engine": "Compute",
-    # Storage
-    "Cloud Storage": "Storage",
-    "Cloud SQL": "Storage",
-    "Cloud Bigtable": "Storage",
-    "Cloud Spanner": "Storage",
-    "Filestore": "Storage",
-    "Persistent Disk": "Storage",
-    "Cloud Firestore": "Storage",
-    # Network
-    "Networking": "Network & Data Transfer",
-    "Cloud CDN": "Network & Data Transfer",
-    "Cloud DNS": "Network & Data Transfer",
-    "Cloud Interconnect": "Network & Data Transfer",
-    "Cloud VPN": "Network & Data Transfer",
-    "Network Connectivity": "Network & Data Transfer",
-    # Third-party Services
-    "Cloud Key Management Service (KMS)": "Third-party Services",
-    "Pub/Sub": "Third-party Services",
-    "BigQuery": "Third-party Services",
-    "Cloud Monitoring": "Third-party Services",
-    "Cloud Logging": "Third-party Services",
-    "Secret Manager": "Third-party Services",
-    "Cloud Build": "Third-party Services",
-    "Artifact Registry": "Third-party Services",
-}
-
-MONTH_NAMES = {
+MONTH_NAMES: dict[str, str] = {
     "01": "Jan", "02": "Feb", "03": "Mar", "04": "Apr",
     "05": "May", "06": "Jun", "07": "Jul", "08": "Aug",
     "09": "Sep", "10": "Oct", "11": "Nov", "12": "Dec",
 }
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────
-
-def _categorise(service: str) -> str:
-    return SERVICE_CATEGORY_MAP.get(service, "Other")
-
+# ── Helpers (match TS helpers exactly) ───────────────────────────────────
 
 def _short_month(yyyymm: str) -> str:
-    return MONTH_NAMES.get(yyyymm[4:6], yyyymm)
+    return MONTH_NAMES.get(yyyymm[4:6], yyyymm[4:6])
 
 
 def _long_period(yyyymm: str) -> str:
-    month = MONTH_NAMES.get(yyyymm[4:6], yyyymm[4:6])
-    year = yyyymm[:4]
-    return f"{month} {year}"
+    return f"{MONTH_NAMES.get(yyyymm[4:6], yyyymm[4:6])} {yyyymm[:4]}"
 
 
 def _days_in_month(year: int, month: int) -> int:
@@ -82,22 +38,25 @@ def _days_in_month(year: int, month: int) -> int:
 
 
 def _fmt(n: float) -> str:
-    if n < 1:
-        return f"${n:.2f}"
-    return f"${n:,.0f}"
+    """
+    Matches TS Intl.NumberFormat USD:
+    - Tiny negatives near zero (e.g. -0.001) → $0  (avoids "-$0")
+    - < $1  → 2 decimal places  ($0.53)
+    - >= $1 → 0 decimal places with comma  ($1,584)
+    """
+    safe = 0.0 if (n < 0 and round(n) == 0) else n
+    if abs(safe) < 1:
+        return f"${safe:.2f}"
+    return f"${safe:,.0f}"
 
 
 def _pct_change(current: float, previous: float) -> tuple[str, str]:
+    """Returns (pct_string, trend) — matches TS pctChange()"""
     if previous == 0:
         return "N/A", "neutral"
     delta = (current - previous) / previous * 100
-    if abs(delta) < 1:
-        trend = "neutral"
-    elif delta > 0:
-        trend = "up"
-    else:
-        trend = "down"
-    sign = "+" if delta > 0 else ""
+    trend = "neutral" if abs(delta) < 1 else ("up" if delta > 0 else "down")
+    sign = "+" if delta >= 0 else ""
     return f"{sign}{delta:.0f}%", trend
 
 
@@ -105,78 +64,76 @@ def _build_drilldown(
     current_map: dict[str, float],
     prev_map: dict[str, float],
     total_spend: float,
-    top_n: Optional[int] = None,
+    top_n: int | None = None,
 ) -> list[CostDriver]:
-    sorted_items = sorted(current_map.items(), key=lambda x: x[1], reverse=True)
+    """
+    Matches TS buildDrilldown():
+    - sorted DESC by amount
+    - percentage: Math.round → integer
+    - change: just the pct string ("+12%" or "N/A")  ← matches TS `change: pct`
+    """
+    items = sorted(current_map.items(), key=lambda x: x[1], reverse=True)
     if top_n:
-        sorted_items = sorted_items[:top_n]
+        items = items[:top_n]
 
-    drivers = []
-    for name, amount in sorted_items:
-        prev_amount = prev_map.get(name, 0)
-        pct_str, trend = _pct_change(amount, prev_amount)
-        percentage = (amount / total_spend * 100) if total_spend > 0 else 0
-
-        change = (
-            f"{pct_str} vs last month"
-            if pct_str != "N/A"
-            else "No prior month data"
+    return [
+        CostDriver(
+            name=name,
+            amount=amount,
+            percentage=float(round((amount / total_spend * 100)) if total_spend > 0 else 0),
+            trend=trend,
+            change=pct,
         )
-
-        drivers.append(
-            CostDriver(
-                name=name,
-                amount=round(amount, 4),
-                percentage=round(percentage, 1),
-                trend=trend,
-                change=change,
-            )
-        )
-    return drivers
+        for name, amount in items
+        for pct, trend in [_pct_change(amount, prev_map.get(name, 0))]
+    ]
 
 
-# ── Main aggregate function ───────────────────────────────────────────────
+# ── aggregate() ───────────────────────────────────────────────────────────
 
 def aggregate(rows: list[ServiceCostRow]) -> AggregatedDashboard:
-    # ── Step 1: Derive available periods ─────────────────────────────────
+
+    # Step 1 — derive period from data
     all_months = sorted({r.invoice_month for r in rows if r.invoice_month})
 
     if not all_months:
+        # Matches TS empty-state return exactly
         return AggregatedDashboard(
             statistics=[],
             charts=[],
-            drilldown=[],
             byService=[],
             byProject=[],
             bySku=[],
-            summary=None,
+            summary=FinancialSummary(
+                period="—", daysElapsed=0, daysInMonth=0, daysRemaining=0
+            ),
         )
 
     current_yyyymm = all_months[-1]
     prev_yyyymm = all_months[-2] if len(all_months) >= 2 else None
 
-    # ── Step 1.5: Period day math ─────────────────────────────────────────
-    year = int(current_yyyymm[:4])
+    # Step 1.5 — day math
+    year  = int(current_yyyymm[:4])
     month = int(current_yyyymm[4:6])
     total_days = _days_in_month(year, month)
 
     now = datetime.now()
     today_yyyymm = f"{now.year}{now.month:02d}"
-    elapsed = now.day if current_yyyymm == today_yyyymm else total_days
+    elapsed   = now.day if current_yyyymm == today_yyyymm else total_days
     remaining = total_days - elapsed
 
-    # ── Step 2: Split rows by month ───────────────────────────────────────
+    # Step 2 — split rows
     current_rows = [r for r in rows if r.invoice_month == current_yyyymm]
-    prev_rows = [r for r in rows if r.invoice_month == prev_yyyymm] if prev_yyyymm else []
+    prev_rows    = [r for r in rows if r.invoice_month == prev_yyyymm] if prev_yyyymm else []
 
-    # ── Step 3: Compute financial totals ─────────────────────────────────
-    mtd_spend = sum(r.effective_cost for r in current_rows)
-    prev_spend = sum(r.effective_cost for r in prev_rows)
-    daily_burn_rate = mtd_spend / elapsed if elapsed > 0 else 0
-    projected_monthly = daily_burn_rate * total_days
+    # Step 3 — totals
+    mtd_spend        = sum(r.effective_cost for r in current_rows)
+    prev_spend       = sum(r.effective_cost for r in prev_rows)
+    daily_burn_rate  = mtd_spend / elapsed if elapsed > 0 else 0.0
+    projected        = daily_burn_rate * total_days
     mom_pct, mom_trend = _pct_change(mtd_spend, prev_spend)
 
-    # ── Step 4: Build statistics ──────────────────────────────────────────
+    # Step 4 — statistics (matches TS statistics[] exactly)
     statistics = [
         FinancialMetric(
             label="MTD Spend",
@@ -194,7 +151,7 @@ def aggregate(rows: list[ServiceCostRow]) -> AggregatedDashboard:
         ),
         FinancialMetric(
             label="Projected Monthly",
-            value=_fmt(projected_monthly),
+            value=_fmt(projected),
             change=(
                 f"{mom_pct} vs. {_long_period(prev_yyyymm)}"
                 if prev_spend > 0 and prev_yyyymm
@@ -212,7 +169,7 @@ def aggregate(rows: list[ServiceCostRow]) -> AggregatedDashboard:
         ),
     ]
 
-    # ── Step 5: Build summary ─────────────────────────────────────────────
+    # Step 5 — summary
     summary = FinancialSummary(
         period=_long_period(current_yyyymm),
         daysElapsed=elapsed,
@@ -220,60 +177,53 @@ def aggregate(rows: list[ServiceCostRow]) -> AggregatedDashboard:
         daysRemaining=remaining,
     )
 
-    # ── Step 6: Build dimension maps ──────────────────────────────────────
-    category_map: dict[str, float] = defaultdict(float)
+    # Step 6 — dimension maps (byService, byProject, bySku — no category/drilldown)
     service_map: dict[str, float] = defaultdict(float)
     project_map: dict[str, float] = defaultdict(float)
-    sku_map: dict[str, float] = defaultdict(float)
-
-    prev_category_map: dict[str, float] = defaultdict(float)
+    sku_map:     dict[str, float] = defaultdict(float)
     prev_service_map: dict[str, float] = defaultdict(float)
     prev_project_map: dict[str, float] = defaultdict(float)
-    prev_sku_map: dict[str, float] = defaultdict(float)
+    prev_sku_map:     dict[str, float] = defaultdict(float)
 
     for row in current_rows:
-        cat = _categorise(row.service_description)
-        category_map[cat] += row.effective_cost
-        service_map[row.service_description] += row.effective_cost
-        project_key = row.project_name or row.project_id or "Unknown"
-        project_map[project_key] += row.effective_cost
-        if row.sku_description:
-            sku_map[row.sku_description] += row.effective_cost
+        svc  = row.service_description or "Unknown"
+        proj = row.project_name or row.project_id or "Unknown"
+        sku  = row.sku_description or "Unknown"
+        service_map[svc]  += row.effective_cost
+        project_map[proj] += row.effective_cost
+        sku_map[sku]      += row.effective_cost
 
     for row in prev_rows:
-        cat = _categorise(row.service_description)
-        prev_category_map[cat] += row.effective_cost
-        prev_service_map[row.service_description] += row.effective_cost
-        project_key = row.project_name or row.project_id or "Unknown"
-        prev_project_map[project_key] += row.effective_cost
-        if row.sku_description:
-            prev_sku_map[row.sku_description] += row.effective_cost
+        svc  = row.service_description or "Unknown"
+        proj = row.project_name or row.project_id or "Unknown"
+        sku  = row.sku_description or "Unknown"
+        prev_service_map[svc]  += row.effective_cost
+        prev_project_map[proj] += row.effective_cost
+        prev_sku_map[sku]      += row.effective_cost
 
-    # ── Step 6.5: Build ranked drilldown arrays ───────────────────────────
-    drilldown = _build_drilldown(category_map, prev_category_map, mtd_spend)
     by_service = _build_drilldown(service_map, prev_service_map, mtd_spend)
     by_project = _build_drilldown(project_map, prev_project_map, mtd_spend)
-    by_sku = _build_drilldown(sku_map, prev_sku_map, mtd_spend, top_n=20)
+    by_sku     = _build_drilldown(sku_map, prev_sku_map, mtd_spend, top_n=20)
 
-    # ── Step 7: Build charts — last 12 months ────────────────────────────
+    # Step 7 — charts: ALL 12 months of current year, zero-fill missing
+    # Matches TS: Array.from({ length: 12 }, ...) with monthlyMap.get(yyyymm) ?? 0
     monthly_map: dict[str, float] = defaultdict(float)
     for row in rows:
-        monthly_map[row.invoice_month] += row.effective_cost
+        if row.invoice_month:
+            monthly_map[row.invoice_month] += row.effective_cost
 
-    sorted_months = sorted(monthly_map.keys())[-12:]
+    chart_year = current_yyyymm[:4]
     charts = [
         ChartDataPoint(
-            month=_short_month(yyyymm),
-            expenses=round(monthly_map[yyyymm]),
+            month=_short_month(f"{chart_year}{str(i + 1).zfill(2)}"),
+            expenses=round(monthly_map.get(f"{chart_year}{str(i + 1).zfill(2)}", 0)),
         )
-        for yyyymm in sorted_months
+        for i in range(12)
     ]
 
-    # ── Step 8: Return ────────────────────────────────────────────────────
     return AggregatedDashboard(
         statistics=statistics,
         charts=charts,
-        drilldown=drilldown,
         byService=by_service,
         byProject=by_project,
         bySku=by_sku,
