@@ -1,6 +1,6 @@
 # /env — Switch Active Environment
 
-Use this command to switch to a specific environment locally. It will fetch all remote branches, checkout the correct branch, pull latest, and align **all** env files (Next.js + FastAPI `api/`).
+Use this command to switch to a specific environment locally. It will fetch all remote branches, checkout the correct branch, and pull latest.
 
 ## Usage
 
@@ -10,11 +10,13 @@ Use this command to switch to a specific environment locally. It will fetch all 
 
 ## What It Does Per Environment
 
-| Environment | Branch | Next.js env | `api/.env` source | `NODE_ENV` | `DEPLOY_ENV` |
-|-------------|--------|-------------|-------------------|-----------|-------------|
-| `development` | `develop` | remove `.env.local` (auto-loads `.env.development`) | `api/.env.development` | `development` | `development` |
-| `staging` | `staging` | `cp .env.staging .env.local` | `api/.env.staging` | `test` | `staging` |
-| `production` | `production` | `cp .env.production .env.local` | `api/.env.production` | `production` | `production` |
+| Environment | Branch | Env file for Docker | `NODE_ENV` | `DEPLOY_ENV` |
+|-------------|--------|---------------------|-----------|-------------|
+| `development` | `develop` | `.env.local` (or `.env.development` fallback) | `development` | `development` |
+| `staging` | `staging` | `.env.staging` → copy to `.env.local` | `test` | `staging` |
+| `production` | `production` | `.env.production` → copy to `.env.local` | `production` | `production` |
+
+> The `api` service reads env vars from the **root** `.env.local` via `docker-compose.yml` (`env_file: ${ENV_FILE:-.env.local}`). There are no `api/.env*` files — the api dir has no env files.
 
 ## Steps (run in order)
 
@@ -23,8 +25,6 @@ Use this command to switch to a specific environment locally. It will fetch all 
 git fetch --all
 git checkout develop
 git pull origin develop
-rm -f .env.local
-cp api/.env.development api/.env
 ```
 
 ### `/env staging`
@@ -36,7 +36,6 @@ git fetch --all
 git checkout staging
 git pull origin staging
 cp .env.staging .env.local
-cp api/.env.staging api/.env
 ```
 
 ### `/env production`
@@ -48,14 +47,12 @@ git fetch --all
 git checkout production
 git pull origin production
 cp .env.production .env.local
-cp api/.env.production api/.env
 ```
 
 ## Rules
 - Always `git fetch --all` first — ensures remote branches are available locally before checkout
 - Always pull latest before running — avoids stale code with wrong env
 - Never commit any `.env.*` files — all are git-ignored
-- `api/.env` is always overwritten by the target env file — both Next.js and FastAPI must be on the same tier
+- Both Next.js UI and FastAPI read from the same root `.env.local` — one file per tier
 - `DEPLOY_ENV` is the runtime differentiator — `NODE_ENV` does not support `staging`
 - For Vercel: set vars directly in **Project Settings → Environment Variables** per project tier
-- `api/.env.development` must exist — it is the source of truth for the development api env
