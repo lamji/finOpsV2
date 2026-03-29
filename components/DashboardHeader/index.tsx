@@ -11,7 +11,7 @@ export function DashboardHeader() {
       
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-            Cloud Spend Dashboard
+            Cloud Spend Dashboard v2
           </h1>
           <p className="text-sm text-muted-foreground">
             Allocation, cost drivers, and trend visibility in one view.

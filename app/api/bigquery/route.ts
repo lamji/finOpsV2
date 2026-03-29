@@ -129,7 +129,7 @@ function buildDashboardResponse(
 // ── Handler ────────────────────────────────────────────────────────────────
 
 export async function GET(request: NextRequest) {
-  const inCludeCredits = false
+  const inCludeCredits = true
   try {
     // [Step 1] Extract query parameter
     const query =
