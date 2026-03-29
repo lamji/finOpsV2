@@ -34,8 +34,21 @@ export function Card({ className, size, ...props }: CardProps) {
 ## Data Consumption
 
 - All dashboard data comes from `Presentation/Dashboard/useDashboard.ts` — never duplicate
+- `useDashboard()` returns: `financialOverview`, `summary`, `byService`, `byProject`, `bySku`, `charts`, `alerts`, `isLoading`, `isError`, `error`
 - Feature-specific API hooks live in `Presentation/[Name]/useApi[Name].ts` (TanStack `useQuery`)
 - Types are defined in `lib/types/[feature].ts` — always import from there, never redefine inline
+
+## Current Client Components
+
+| Component | Hook used | Purpose |
+|-----------|-----------|---------|
+| `StatsSection` | `useDashboard()` | 4 stat cards grid |
+| `MainContent` | `useDashboard()` | Cost breakdown by service/project/SKU |
+| `ChartSection` | `useDashboard()` | Recharts LineChart — expense trend |
+| `DashboardSidebar` | `useDashboard()` | Period summary |
+| `DashboardInsights` | `useDashboard()` | AI alerts grid (warning/info/success) |
+| `DashboardDataSync` | `useDashboard()` | Side-effect only — `toast.error()` on failure |
+| `FloatingChatbotButton` | `useDashboard()` | Chat widget → `POST /api/chatbot` |
 
 ## Icons
 

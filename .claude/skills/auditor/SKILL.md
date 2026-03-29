@@ -1,4 +1,5 @@
 ---
+name: auditor
 description: Audits the FinOps codebase against all rules in .claude/rules/. Evidence-based — every finding is backed by a specific file and line. Auto-fixes violations after reporting.
 allowed-tools: Read, Grep, Glob, Edit, Write, Bash
 ---

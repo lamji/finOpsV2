@@ -1,4 +1,5 @@
 ---
+name: scan-knowledge
 description: Scans the project to build a complete knowledge snapshot — features, pages, API routes, system design, tools, and dependencies. Writes results to .claude/CLAUDE.md and syncs agent memory. Run this after any significant structural change so future tasks skip file scanning entirely.
 allowed-tools: Read, Grep, Glob, Bash, Write, Edit
 ---

@@ -47,7 +47,22 @@ API routes feed `Presentation/[Name]/useApi[Name].ts` hooks via TanStack Query:
 4. Mock data fallback lives in `Presentation/[Name]/use[Name].ts`
 
 ## Active Endpoints
-- `GET /api/bigquery` → `{ statistics, charts, drilldown, aiInsights }` — unified dashboard payload
+
+### Next.js Route Handlers (`app/api/`)
+- `GET /api/bigquery` — fetch BigQuery, aggregate, cache, generate AI insights
+  - Response: `{ status, source, statistics, charts, drilldown, byService, byProject, bySku, summary, aiInsights, rawPayload }`
+  - `?noCache=true` — bypass Redis read/write
+  - `DELETE /api/bigquery` — flush entire Redis cache
+- `POST /api/chatbot` — FinOps-only chatbot; guards prompt injection, code questions, off-topic
+  - Body: `{ message: string, context: ChatbotContext }`
+  - Response: `{ message: string, blocked: boolean }`
+
+### FastAPI Backend (Docker mode only — `api/` container)
+- `GET {NEXT_PUBLIC_API_URL}/dashboard` — same aggregated payload as above (Python port)
+  - `?noCache=true` — bypass Redis
+  - `DELETE {NEXT_PUBLIC_API_URL}/dashboard` — flush Redis cache
+
+> **Routing rule:** `useApiDashboard()` hits FastAPI if `NEXT_PUBLIC_API_URL` is set (Docker), otherwise falls back to `/api/bigquery` (Vercel/local).
 
 ## Environment Variables
 

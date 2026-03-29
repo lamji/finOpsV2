@@ -16,14 +16,23 @@ Core capabilities:
 
 ## 2. Stack
 
+**Frontend (Next.js UI)**
 - Framework: Next.js 16 App Router
 - UI: React 19, Tailwind CSS 4, shadcn/ui, Recharts
 - Data fetching: TanStack Query
-- Server integrations: Google BigQuery REST API via `google-auth-library`
+- BigQuery fallback route: `app/api/bigquery/route.ts` via `google-auth-library` (used when `NEXT_PUBLIC_API_URL` is not set)
 - Cache: Redis via `ioredis`
 - Logging: Pino
 - Validation: Zod
-- AI: Anthropic SDK
+- AI: Anthropic SDK (`@anthropic-ai/sdk`)
+
+**Backend API (Python FastAPI — primary in Docker)**
+- Runtime: Python 3.12
+- Framework: FastAPI + uvicorn
+- BigQuery: `google-cloud-bigquery` Python SDK
+- AI: `anthropic` Python SDK
+- Cache: `redis` Python client
+- Config: `pydantic-settings` (reads from `.env.local` via `env_file` in docker-compose)
 
 ## 3. Detailed Setup And Local Execution
 
@@ -95,14 +104,37 @@ http://localhost:3000
 ```
 
 ### Run with Docker
-Important note: `docker compose` does not auto-load `.env.development`, `.env.staging`, or `.env.production`. The API service reads secrets from `ENV_FILE` and defaults to `.env.local` when `ENV_FILE` is not set.
 
-Recommended commands:
+`docker compose` starts three services:
 
+| Service | Image / Build | Port | Purpose |
+|---------|--------------|------|---------|
+| `redis` | `redis:7-alpine` | 6379 | Cache layer — starts first, api waits for healthcheck |
+| `api` | `api/Dockerfile` (Python 3.12 + FastAPI) | 8000 | Primary API — `GET /dashboard`, `DELETE /dashboard` |
+| `ui` | `Dockerfile` (Node 22, 3-stage build) | 3000 | Next.js dashboard |
+
+**Important — two things must be true before you run:**
+
+1. The API service reads all secrets from `ENV_FILE` (defaults to `.env.local`). Create that file from `.env.example` before running.
+2. `NEXT_PUBLIC_API_URL` is **baked into the UI at build time** — not a runtime variable. When running locally it defaults to `http://localhost:8000` (correct). For a remote server you must pass the public server address at build time.
+
+**Local run (same machine):**
 ```bash
-# default local run
-docker compose up --build
+# copy and fill in .env.local from the template
+cp .env.example .env.local
 
+# build and start all three services
+docker compose up --build
+```
+
+**Remote server (AWS EC2, VPS, etc.):**
+```bash
+# NEXT_PUBLIC_API_URL must be the public address — baked into the UI image at build
+NEXT_PUBLIC_API_URL=http://<server-ip>:8000 docker compose up --build
+```
+
+**Staging / Production env files:**
+```bash
 # staging
 ENV_FILE=.env.staging docker compose up --build
 
@@ -111,14 +143,13 @@ ENV_FILE=.env.production docker compose up --build
 ```
 
 On PowerShell:
-
 ```powershell
 $env:ENV_FILE = ".env.staging"
+$env:NEXT_PUBLIC_API_URL = "http://<server-ip>:8000"
 docker compose up --build
 ```
 
-After changing `docker-compose.yml` or switching env files, rebuild cleanly:
-
+After switching env files or changing `docker-compose.yml`, rebuild cleanly:
 ```bash
 docker compose down
 docker compose up --build --remove-orphans
@@ -141,61 +172,174 @@ npm run typecheck
 
 ### High-Level Structure
 
-- `app/`: App Router entry points and API routes
-- `Presentation/`: client-side presentation hooks for dashboard data shaping
-- `components/`: UI composition and feature components
-- `lib/`: environment, aggregation engine, logging, Redis helpers, shared types
+```
+app/              Next.js App Router — page shells and API fallback routes
+Presentation/     Client-side presentation hooks — data shaping for UI
+components/       UI composition and feature components
+lib/              Environment, aggregation engine (TS), logging, Redis helpers, shared types
+api/              Python FastAPI service — primary API in Docker
+  app/
+    main.py       FastAPI app + CORS config
+    config.py     pydantic-settings env loading
+    routes/
+      dashboard.py  GET /dashboard, DELETE /dashboard
+    services/
+      bigquery.py   BigQuery client + row fetching
+      engine.py     aggregate() — Python port of lib/finops-engine.ts
+      ai.py         generate_insights() — Anthropic claude-haiku-4-5
+      cache.py      Redis get/set helpers
+    models.py     Pydantic response models
+```
+
+### API Routing — Dual Path
+
+`useApiDashboard()` in `Presentation/Dashboard/useApiDashboard.ts` routes to one of two API implementations depending on whether `NEXT_PUBLIC_API_URL` is set at build time:
+
+```
+NEXT_PUBLIC_API_URL is set (Docker)
+  └─ calls: ${NEXT_PUBLIC_API_URL}/dashboard  →  Python FastAPI  (port 8000)
+
+NEXT_PUBLIC_API_URL is not set (plain npm run dev)
+  └─ calls: /api/bigquery                     →  Next.js route   (app/api/bigquery/route.ts)
+```
+
+Both implementations perform the same work: fetch BigQuery rows → `aggregate()` → `generate_insights()` (Anthropic) → Redis cache. They are parallel implementations in TypeScript and Python respectively.
 
 ### Data Responsibilities
 
-- `useApiDashboard()` owns remote fetching and cache freshness timing with a 5-minute client stale window in [`Presentation/Dashboard/useApiDashboard.ts`](/C:/Users/akrizu/Documents/DigitalFuture/finOps/Presentation/Dashboard/useApiDashboard.ts#L20).
-- `useDashboard()` reshapes the API payload into view-friendly properties consumed by multiple widgets in [`Presentation/Dashboard/useDashboard.ts`](/C:/Users/akrizu/Documents/DigitalFuture/finOps/Presentation/Dashboard/useDashboard.ts#L5).
-- `aggregate()` is the main domain transformation layer. It converts raw billing rows into summary metrics, comparative drilldowns, and monthly trend data in [`lib/finops-engine.ts`](/C:/Users/akrizu/Documents/DigitalFuture/finOps/lib/finops-engine.ts#L99).
-- `DashboardDataSync` handles the main side effect on dashboard fetch failure by showing a toast in [`components/DashboardDataSync/index.tsx`](/C:/Users/akrizu/Documents/DigitalFuture/finOps/components/DashboardDataSync/index.tsx#L12).
+- `useApiDashboard()` owns remote fetching and cache freshness timing with a 5-minute stale window. It calls the FastAPI service when `NEXT_PUBLIC_API_URL` is set, otherwise falls back to the Next.js route — see [`Presentation/Dashboard/useApiDashboard.ts`](Presentation/Dashboard/useApiDashboard.ts).
+- `useDashboard()` reshapes the API payload into view-friendly properties consumed by multiple widgets in [`Presentation/Dashboard/useDashboard.ts`](Presentation/Dashboard/useDashboard.ts).
+- `aggregate()` is the main domain transformation layer. It converts raw billing rows into summary metrics, comparative drilldowns, and monthly trend data. Exists in both [`lib/finops-engine.ts`](lib/finops-engine.ts) (TypeScript) and [`api/app/services/engine.py`](api/app/services/engine.py) (Python).
+- `DashboardDataSync` handles the main side effect on dashboard fetch failure by showing a toast in [`components/DashboardDataSync/index.tsx`](components/DashboardDataSync/index.tsx).
 
 ### External Dependencies Touched At Runtime
 
-- Google OAuth token acquisition
+- Google OAuth token acquisition (both TS and Python paths)
 - BigQuery query API
-- Anthropic messages API
-- Redis cache service
+- Anthropic messages API (`claude-haiku-4-5`)
+- Redis cache service (300s TTL default)
 
 ## 5. SDLC Overview
 
 ### How Environments Work
 
-Each tier is a separate Vercel project linked to the same GitHub repository. Secrets are never committed — they are entered directly in each Vercel project's environment variables UI.
+The project uses Docker Compose deployed on a server (e.g. AWS EC2). Each tier maps to a Git branch and a dedicated env file. Secrets are never committed — they live in the env file on the server only.
 
-| Tier | Vercel project | Branch | Credentials |
+| Tier | Branch | Env file | `DEPLOY_ENV` |
+|------|--------|----------|-------------|
+| Development | `develop` | `.env.local` | `development` |
+| Staging | `staging` | `.env.staging` | `staging` |
+| Production | `production` | `.env.production` | `production` |
+
+### Deploying for the First Time
+
+On the server (SSH in first):
+
+```bash
+git clone <repo-url>
+cd finOps
+git checkout develop   # or staging / production
+
+# create env file with real credentials
+cp .env.example .env.local
+nano .env.local        # fill in GCP_*, ANTHROPIC_API_KEY, REDIS_URL, etc.
+
+# build and run (local — NEXT_PUBLIC_API_URL defaults to http://localhost:8000)
+docker compose up --build -d
+
+# remote server — pass the public address so the UI can reach the API
+NEXT_PUBLIC_API_URL=http://<server-ip>:8000 docker compose up --build -d
+```
+
+### Promoting from Development to Staging
+
+```bash
+# open a PR from develop → staging and merge
+# then on the staging server:
+git pull origin staging
+ENV_FILE=.env.staging docker compose up --build -d --remove-orphans
+```
+
+### Promoting from Staging to Production
+
+```bash
+# open a PR from staging → production and merge
+# then on the production server:
+git pull origin production
+ENV_FILE=.env.production \
+  NEXT_PUBLIC_API_URL=http://<prod-server-ip>:8000 \
+  docker compose up --build -d --remove-orphans
+```
+
+### Updating a Running Deployment
+
+```bash
+git pull origin <branch>
+docker compose up --build -d --remove-orphans
+```
+
+## 5.1 SDLC Without Docker — Vercel Deployment
+
+When deploying without Docker, the Python FastAPI service (`api/`) is **not used**. Vercel runs the Next.js app only. The UI falls back to the built-in Next.js route (`app/api/bigquery/route.ts`) which handles BigQuery, aggregation, and Anthropic directly — because `NEXT_PUBLIC_API_URL` is not set.
+
+> **Do not set `NEXT_PUBLIC_API_URL` in Vercel.** Leaving it unset is what activates the Next.js fallback route. Setting it would point the UI to a FastAPI service that does not exist on Vercel.
+
+### How Environments Work
+
+Each tier is a separate Vercel project linked to the same GitHub repository. Secrets are entered directly in each Vercel project's environment variables UI — never committed.
+
+| Tier | Vercel project | Branch | `DEPLOY_ENV` |
 |------|---------------|--------|-------------|
-| Development | `finops-dev` | `develop` | sandbox service account + sandbox BigQuery dataset |
-| Staging | `finops-staging` | `staging` | staging service account + staging BigQuery dataset |
-| Production | `finops-prod` | `production` | production service account + production BigQuery dataset |
+| Development | `finops-dev` | `develop` | `development` |
+| Staging | `finops-staging` | `staging` | `staging` |
+| Production | `finops-prod` | `production` | `production` |
 
-### Deploying Development
+### Required Environment Variables (set in Vercel UI for each project)
+
+```
+ANTHROPIC_API_KEY=sk-ant-...
+GCP_PROJECT_ID=your-gcp-project-id
+GCP_CLIENT_EMAIL=your-service-account@your-project.iam.gserviceaccount.com
+GCP_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nYOUR_KEY_HERE\n-----END PRIVATE KEY-----\n"
+BQ_DATASET=your_dataset
+BQ_TABLE=your_billing_export_table
+DEPLOY_ENV=development   # or staging / production per tier
+LOG_LEVEL=info
+```
+
+`REDIS_URL` is optional. If set, Redis caching is enabled. If not set, every request hits BigQuery directly — the app still works.
+
+Do **not** set `NEXT_PUBLIC_API_URL` — leave it unset so the fallback Next.js route is used.
+
+### Deploying Development (first time)
 
 1. Go to [vercel.com](https://vercel.com) → **Add New Project**
-2. Import the GitHub repo → set branch to `develop`
-3. Add all variables from [`.env.example`](.env.example) under **Environment Variables**, using sandbox credentials
-4. Click **Deploy**
+2. Import the GitHub repository
+3. Set the **Production Branch** to `develop`
+4. Under **Environment Variables**, add all required variables above using sandbox credentials
+5. Click **Deploy**
+
+Every push to `develop` redeploys automatically.
 
 ### Promoting to Staging
 
 1. Go to [vercel.com](https://vercel.com) → **Add New Project**
-2. Import the same GitHub repo → set branch to `develop` (or a dedicated `staging` branch)
-3. Add all variables from [`.env.example`](.env.example) under **Environment Variables**, using staging credentials (different service account, different BigQuery dataset)
-4. Click **Deploy**
+2. Import the same GitHub repository
+3. Set the **Production Branch** to `staging`
+4. Under **Environment Variables**, add all required variables using staging credentials (separate GCP service account, separate BigQuery dataset)
+5. Click **Deploy**
 
-Each push to that branch redeploys staging automatically.
+To deploy new changes to staging: open a PR from `develop` → `staging` and merge. Vercel redeploys automatically on merge.
 
 ### Promoting to Production
 
 1. Go to [vercel.com](https://vercel.com) → **Add New Project**
-2. Import the same GitHub repo → set branch to `main`
-3. Add all variables from [`.env.example`](.env.example) under **Environment Variables**, using production credentials
-4. Click **Deploy**
+2. Import the same GitHub repository
+3. Set the **Production Branch** to `production`
+4. Under **Environment Variables**, add all required variables using production credentials
+5. Click **Deploy**
 
-Evrytime there is new changes and need to deploy in staging, just do a PR from develop to staging
+To deploy new changes to production: open a PR from `staging` → `production` and merge.
 
 ## 6. AI Disclosure
 
