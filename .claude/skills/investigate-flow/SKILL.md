@@ -1,4 +1,5 @@
 ---
+name: investigate-flow
 description: Investigates user flows in the codebase. Traces every function call from an entry point (e.g. login page) to the last function in the chain. Maps the complete call graph with file locations, inputs, and outputs.
 allowed-tools: Read, Grep, Glob
 ---
