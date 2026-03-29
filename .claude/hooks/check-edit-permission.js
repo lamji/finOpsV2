@@ -1,7 +1,14 @@
 /**
- * PreToolUse hook — Config Protection with Approval Override
+ * PreToolUse hook — Branch Protection + Push Protection + Config Protection
  *
- * Flow:
+ * Branch check (hard block, no bypass):
+ *   - staging or production branch → BLOCK all edits, no exceptions
+ *
+ * Push protection (hard block, no bypass):
+ *   - git push targeting staging or production → BLOCK, no exceptions
+ *   - Applies to both AI and user-initiated commands
+ *
+ * Config protection (approval override):
  *   1. Agent tries to edit a protected file → BLOCK, tell agent to ask user
  *   2. User approves → agent writes filename to .claude/approvals.json
  *   3. Agent retries → this hook finds the approval, allows it, clears entry
@@ -9,6 +16,7 @@
 
 const fs = require("fs")
 const path = require("path")
+const { execSync } = require("child_process")
 
 const PROTECTED = [
   "tsconfig.json",
@@ -29,6 +37,29 @@ const PROTECTED = [
 
 const APPROVAL_FILE = ".claude/approvals.json"
 
+// ── Branch check (runs before anything else) ──────────────────────────────
+let currentBranch = ""
+try {
+  currentBranch = execSync("git rev-parse --abbrev-ref HEAD", { stdio: ["pipe", "pipe", "pipe"] })
+    .toString()
+    .trim()
+} catch (e) {
+  currentBranch = ""
+}
+
+const LOCKED_BRANCHES = ["staging", "production"]
+
+if (LOCKED_BRANCHES.includes(currentBranch)) {
+  console.log(
+    JSON.stringify({
+      continue: false,
+      reason: `🚫 BRANCH LOCK — You are on the '${currentBranch}' branch. AI is not allowed to edit any files on staging or production. No bypass, no exceptions. Switch to 'develop' or another feature branch before making changes:\n\n  git checkout develop\n\nThen retry.`,
+    }),
+  )
+  process.exit(0)
+}
+// ──────────────────────────────────────────────────────────────────────────
+
 let raw = ""
 process.stdin.on("data", (chunk) => (raw += chunk))
 process.stdin.on("end", () => {
@@ -41,6 +72,22 @@ process.stdin.on("end", () => {
     )
     process.exit(0)
   }
+
+  // ── Push protection — block git push to staging or production ────────────
+  const command = args.command || ""
+  const isPushToLockedBranch =
+    /git\s+push\b/.test(command) && /\b(staging|production)\b/.test(command)
+
+  if (isPushToLockedBranch) {
+    console.log(
+      JSON.stringify({
+        continue: false,
+        reason: `🚫 PUSH BLOCKED — Pushing directly to 'staging' or 'production' is not allowed. No bypass, no exceptions.\n\nStaging and production are for local testing only. Push your changes to 'develop' instead:\n\n  git push origin develop\n\nPromotion to staging/production must go through the proper release workflow.`,
+      }),
+    )
+    process.exit(0)
+  }
+  // ──────────────────────────────────────────────────────────────────────────
 
   const filePath = args.file_path || ""
   const basename = path.basename(filePath)

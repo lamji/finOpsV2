@@ -2,13 +2,22 @@
 
 import { StatCard } from "./StatCard"
 import { useDashboard } from "@/Presentation/Dashboard/useDashboard"
+import { Skeleton } from "@/components/ui/skeleton"
 
 function StatCardSkeleton() {
   return (
-    <div className="animate-pulse rounded-lg border border-border bg-card p-6 space-y-3">
-      <div className="h-3 w-24 rounded bg-muted" />
-      <div className="h-7 w-32 rounded bg-muted" />
-      <div className="h-3 w-40 rounded bg-muted" />
+    <div className="rounded-2xl border border-border/60 bg-card p-6 shadow-sm">
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-4 w-24" />
+          <Skeleton className="h-10 w-10 rounded-xl" />
+        </div>
+        <div className="space-y-2">
+          <Skeleton className="h-8 w-32" />
+          <Skeleton className="h-4 w-28" />
+        </div>
+        <Skeleton className="h-12 w-full rounded-xl" />
+      </div>
     </div>
   )
 }
@@ -18,7 +27,7 @@ export function StatsSection() {
 
   if (isLoading) {
     return (
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {Array.from({ length: 6 }).map((_, i) => (
           <StatCardSkeleton key={i} />
         ))}
@@ -35,7 +44,7 @@ export function StatsSection() {
   }
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       {financialOverview.map((metric) => (
         <StatCard
           key={metric.label}

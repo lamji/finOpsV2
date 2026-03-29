@@ -6,7 +6,7 @@ import { logger } from "@/lib/logger"
 import { redisGet, redisSet, redisFlushAll, TTL } from "@/lib/redis"
 import { aggregate, generateInsights } from "@/lib/finops-engine"
 import type {
-  BillingRow,
+  ServiceCostRow,
   Alert,
   AggregatedDashboard,
   BigQueryCell,
@@ -117,7 +117,6 @@ function buildDashboardResponse(
     source,
     statistics: aggregated.statistics,
     charts: aggregated.charts,
-    drilldown: aggregated.drilldown,
     byService: aggregated.byService,
     byProject: aggregated.byProject,
     bySku: aggregated.bySku,
@@ -130,11 +129,12 @@ function buildDashboardResponse(
 // ── Handler ────────────────────────────────────────────────────────────────
 
 export async function GET(request: NextRequest) {
+  const inCludeCredits = false
   try {
     // [Step 1] Extract query parameter
     const query =
       request.nextUrl.searchParams.get("query") ??
-      `SELECT * FROM \`${env.GCP_PROJECT_ID}.${env.BQ_DATASET}.${env.BQ_TABLE}\` WHERE invoice.month LIKE '${new Date().getFullYear()}%'`
+      `SELECT invoice.month AS invoice_month, service.description AS service_description, project.name AS project_name, project.id AS project_id, sku.description AS sku_description, SUM(cost ${inCludeCredits ? "+ IFNULL((SELECT SUM(c.amount) FROM UNNEST(credits) c), 0)" : ""}) AS effective_cost FROM \`${env.GCP_PROJECT_ID}.${env.BQ_DATASET}.${env.BQ_TABLE}\` WHERE invoice.month LIKE '${new Date().getFullYear()}%' GROUP BY 1, 2, 3, 4, 5`
 
     // [Step 2] Extract projectId parameter
     const projectId =
@@ -172,7 +172,7 @@ export async function GET(request: NextRequest) {
         }
 
         const aggregated: AggregatedDashboard = aggregate(
-          cached.rows as unknown as BillingRow[],
+          cached.rows as unknown as ServiceCostRow[],
         )
         const aiInsights: Alert[] = await generateInsights(aggregated)
 
@@ -310,7 +310,7 @@ export async function GET(request: NextRequest) {
 
     // [Step 11.5] Aggregate fresh data via lib/finops-engine.ts
     const aggregated: AggregatedDashboard = aggregate(
-      rows as unknown as BillingRow[],
+      rows as unknown as ServiceCostRow[],
     )
 
     // [Step 11.6] Call Anthropic SDK (claude-haiku-4-5) for AI insights

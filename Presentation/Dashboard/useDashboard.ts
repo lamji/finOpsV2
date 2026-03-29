@@ -8,7 +8,9 @@ export function useDashboard() {
   return {
     financialOverview: data?.statistics ?? [],
     summary: data?.summary,
-    costDrivers: data?.drilldown ?? [],
+    byService: data?.byService ?? [],
+    byProject: data?.byProject ?? [],
+    bySku: data?.bySku ?? [],
     charts: data?.charts ?? [],
     alerts: data?.aiInsights ?? [],
     isLoading,

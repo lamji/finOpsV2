@@ -10,6 +10,9 @@ import { z } from 'zod'
 const envSchema = z.object({
   // Runtime
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  // Deployment tier — distinguishes staging from production at runtime
+  // since Next.js only supports NODE_ENV: development | test | production
+  DEPLOY_ENV: z.enum(['development', 'staging', 'production']).default('development'),
 
   // Google Cloud / BigQuery
   GCP_PROJECT_ID: z.string().default('mock-project'),
@@ -21,8 +24,8 @@ const envSchema = z.object({
   BQ_DATASET: z.string().default('mock_dataset'),
   BQ_TABLE: z.string().default('mock_table'),
 
-  // Anthropic AI
-  ANTHROPIC_API_KEY: z.string().min(1, 'ANTHROPIC_API_KEY is required for AI insights'),
+  // Anthropic AI (optional at build time — graceful degradation if missing at runtime)
+  ANTHROPIC_API_KEY: z.string().default(''),
 
   // Redis (optional — graceful degradation if not set)
   REDIS_URL: z.string().optional(),
@@ -40,7 +43,7 @@ function validateEnv() {
       .join('\n')
     throw new Error(
       `\n\n[finOps] Environment configuration error:\n${formatted}\n\n` +
-        `Copy .env.example to .env.development and fill in the missing values.\n`,
+        `Copy .env.example to .env.local (all envs) or .env.development.local / .env.production.local and fill in the missing values.\n`,
     )
   }
 

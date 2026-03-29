@@ -34,6 +34,33 @@ export interface Alert {
   message: string
 }
 
+export interface ChatbotMessage {
+  id: string
+  role: "assistant" | "user"
+  content: string
+  blocked?: boolean
+}
+
+export interface ChatbotContext {
+  statistics: FinancialMetric[]
+  charts: ChartDataPoint[]
+  byService: CostDriver[]
+  byProject: CostDriver[]
+  bySku: CostDriver[]
+  summary: FinancialSummary
+  aiInsights: Alert[]
+}
+
+export interface ChatbotRequest {
+  message: string
+  context: ChatbotContext
+}
+
+export interface ChatbotResponse {
+  message: string
+  blocked: boolean
+}
+
 export interface QuickAction {
   id: string
   label: string
@@ -45,7 +72,6 @@ export interface BigQueryDashboardResponse {
   source: "cached" | "db"
   statistics: FinancialMetric[]
   charts: ChartDataPoint[]
-  drilldown: CostDriver[]        // by service category
   byService: CostDriver[]        // by raw service name
   byProject: CostDriver[]        // by project
   bySku: CostDriver[]            // by SKU (top 20)
@@ -65,18 +91,20 @@ export interface StatCardProps {
 export interface AggregatedDashboard {
   statistics: FinancialMetric[]
   charts: ChartDataPoint[]
-  drilldown: CostDriver[]        // by service category (Compute, Storage, etc.)
   byService: CostDriver[]        // by raw service.description
   byProject: CostDriver[]        // by project.id / project.name
   bySku: CostDriver[]            // by sku.description (top 20)
   summary: FinancialSummary
 }
 
-/** Aggregated row returned by the GROUP BY SQL query — one row per (service, month) */
+/** Aggregated row returned by the GROUP BY SQL query — one row per (month, service, project, sku) */
 export interface ServiceCostRow {
-  service_description: string   // service.description
-  invoice_month: string         // invoice.month — YYYYMM format
-  effective_cost: number        // cost + credits, already summed by SQL
+  invoice_month: string          // invoice.month — YYYYMM format
+  service_description: string    // service.description
+  project_name: string | null    // project.name (null for org-level charges)
+  project_id: string | null      // project.id (null for org-level charges)
+  sku_description: string        // sku.description
+  effective_cost: string         // cost + credits, pre-summed by BigQuery (REST API returns as string)
 }
 
 // ── BigQuery wire types ─────────────────────────────────────────────────────
